@@ -1,0 +1,124 @@
+name: Build Android TV APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: '服务端 Base URL，不需要带 /tv，例如 https://example.com 或 http://192.168.1.10:3000'
+        required: true
+        default: 'http://192.168.1.10:3000'
+        type: string
+      app_name:
+        description: 'Android TV 应用名称'
+        required: true
+        default: 'MoonTVPlus TV'
+        type: string
+      version_name:
+        description: '版本名'
+        required: false
+        default: '1.0.0'
+        type: string
+      version_code:
+        description: '版本号，必须是整数'
+        required: false
+        default: '1'
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  build:
+    name: Build Android TV APK (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: standard
+            min_sdk: '23'
+            label: android6plus
+          - variant: compat
+            min_sdk: '21'
+            label: android5plus
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Prepare Android TV icon from public/logo.png
+        run: |
+          cp public/logo.png apps/android-tv/app/src/main/res/drawable/logo.png
+
+      - name: Decode Android signing keystore
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/android-tv-release.keystore
+          else
+            echo "ANDROID_KEYSTORE_BASE64 is not set, release APK will be unsigned."
+          fi
+
+      - name: Build APK
+        working-directory: apps/android-tv
+        env:
+          BASE_URL: ${{ inputs.base_url }}
+          APP_NAME: ${{ inputs.app_name }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          MIN_SDK: ${{ matrix.min_sdk }}
+          ANDROID_KEYSTORE_PATH: /tmp/android-tv-release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          gradle assembleDebug assembleRelease \
+            -PBASE_URL="$BASE_URL" \
+            -PAPP_NAME="$APP_NAME" \
+            -PVERSION_NAME="$VERSION_NAME" \
+            -PVERSION_CODE="$VERSION_CODE" \
+            -PMIN_SDK="$MIN_SDK"
+
+      - name: Collect APK artifacts
+        run: |
+          mkdir -p /tmp/android-tv-apks
+          cp apps/android-tv/app/build/outputs/apk/debug/app-debug.apk "/tmp/android-tv-apks/moontvplus-tv-${{ inputs.version_name }}-${{ matrix.label }}-debug.apk"
+          if [ -f apps/android-tv/app/build/outputs/apk/release/app-release.apk ]; then
+            cp apps/android-tv/app/build/outputs/apk/release/app-release.apk "/tmp/android-tv-apks/moontvplus-tv-${{ inputs.version_name }}-${{ matrix.label }}-release-signed.apk"
+          fi
+          if [ -f apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk "/tmp/android-tv-apks/moontvplus-tv-${{ inputs.version_name }}-${{ matrix.label }}-release-unsigned.apk"
+          fi
+          ls -lh /tmp/android-tv-apks
+
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: moontvplus-android-tv-${{ inputs.version_name }}-${{ matrix.label }}
+          path: /tmp/android-tv-apks/*.apk
+          if-no-files-found: error
+          retention-days: 30

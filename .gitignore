@@ -68,3 +68,6 @@ public/workbox-*.js.map
 # local scripts
 scripts/tvbox/
 scripts/test
+
+.agents/
+skills-lock.json

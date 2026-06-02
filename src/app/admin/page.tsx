@@ -367,6 +367,10 @@ interface SiteConfig {
   TMDBApiKey?: string;
   TMDBProxy?: string;
   TMDBReverseProxy?: string;
+  BangumiDataSource?: 'direct' | 'server-proxy' | 'custom-baseurl';
+  BangumiApiBaseUrl?: string;
+  BangumiImageBaseUrl?: string;
+  BangumiProxy?: string;
   BannerDataSource?: string;
   RecommendationDataSource?: string;
   PansouApiUrl?: string;
@@ -894,12 +898,14 @@ const UserConfig = ({
       if (checked) {
         // 只选择自己有权限操作的用户
         const selectableUsernames =
-          displayUsers?.filter(
-            (user) =>
-              role === 'owner' ||
-              (role === 'admin' &&
-                (user.role === 'user' || user.username === currentUsername))
-          ).map((u) => u.username) || [];
+          displayUsers
+            ?.filter(
+              (user) =>
+                role === 'owner' ||
+                (role === 'admin' &&
+                  (user.role === 'user' || user.username === currentUsername))
+            )
+            .map((u) => u.username) || [];
         setSelectedUsers(new Set(selectableUsernames));
       } else {
         setSelectedUsers(new Set());
@@ -1261,9 +1267,7 @@ const UserConfig = ({
                 }
               }}
               className={
-                showAddUserForm
-                  ? buttonStyles.secondary
-                  : buttonStyles.success
+                showAddUserForm ? buttonStyles.secondary : buttonStyles.success
               }
             >
               {showAddUserForm ? '取消' : '添加用户'}
@@ -1900,7 +1904,9 @@ const UserConfig = ({
                   下一页
                 </button>
                 <button
-                  onClick={() => fetchUsersV2(userTotalPages, trimmedUserSearch)}
+                  onClick={() =>
+                    fetchUsersV2(userTotalPages, trimmedUserSearch)
+                  }
                   disabled={userPage === userTotalPages}
                   className={`px-3 py-1 text-sm rounded ${
                     userPage === userTotalPages
@@ -3618,7 +3624,8 @@ const OpenListConfigComponent = ({
                 离线下载使用独立 OpenList 源
               </h3>
               <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
-                开启后，存到私人影库和追番订阅会把任务提交到下方 OpenList，扫描和播放仍使用上方主 OpenList
+                开启后，存到私人影库和追番订阅会把任务提交到下方
+                OpenList，扫描和播放仍使用上方主 OpenList
               </p>
             </div>
             <button
@@ -3669,9 +3676,7 @@ const OpenListConfigComponent = ({
                   <input
                     type='text'
                     value={offlineDownloadUsername}
-                    onChange={(e) =>
-                      setOfflineDownloadUsername(e.target.value)
-                    }
+                    onChange={(e) => setOfflineDownloadUsername(e.target.value)}
                     disabled={!enabled}
                     placeholder='admin'
                     className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed'
@@ -3684,9 +3689,7 @@ const OpenListConfigComponent = ({
                   <input
                     type='password'
                     value={offlineDownloadPassword}
-                    onChange={(e) =>
-                      setOfflineDownloadPassword(e.target.value)
-                    }
+                    onChange={(e) => setOfflineDownloadPassword(e.target.value)}
                     disabled={!enabled}
                     placeholder='password'
                     className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed'
@@ -4041,8 +4044,11 @@ const NetDiskConfigComponent = ({
   const [enabled, setEnabled] = useState(false);
   const [cookie, setCookie] = useState('');
   const [savePath, setSavePath] = useState('/');
-  const [quarkPlayMode, setQuarkPlayMode] = useState<'direct_first' | 'transcode_first'>('transcode_first');
-  const [quarkMultiThreadPlayback, setQuarkMultiThreadPlayback] = useState(false);
+  const [quarkPlayMode, setQuarkPlayMode] = useState<
+    'direct_first' | 'transcode_first'
+  >('transcode_first');
+  const [quarkMultiThreadPlayback, setQuarkMultiThreadPlayback] =
+    useState(false);
   const [mobileEnabled, setMobileEnabled] = useState(false);
   const [mobileAuthorization, setMobileAuthorization] = useState('');
   const [baiduEnabled, setBaiduEnabled] = useState(false);
@@ -4066,7 +4072,9 @@ const NetDiskConfigComponent = ({
     setEnabled(quark?.Enabled || false);
     setCookie(quark?.Cookie || '');
     setSavePath(quark?.SavePath || '/');
-    setQuarkPlayMode(quark?.PlayMode === 'direct_first' ? 'direct_first' : 'transcode_first');
+    setQuarkPlayMode(
+      quark?.PlayMode === 'direct_first' ? 'direct_first' : 'transcode_first'
+    );
     setQuarkMultiThreadPlayback(Boolean(quark?.MultiThreadPlayback));
     setMobileEnabled(mobile?.Enabled || false);
     setMobileAuthorization(mobile?.Authorization || '');
@@ -4423,7 +4431,13 @@ const NetDiskConfigComponent = ({
             </label>
             <select
               value={quarkPlayMode}
-              onChange={(e) => setQuarkPlayMode(e.target.value === 'transcode_first' ? 'transcode_first' : 'direct_first')}
+              onChange={(e) =>
+                setQuarkPlayMode(
+                  e.target.value === 'transcode_first'
+                    ? 'transcode_first'
+                    : 'direct_first'
+                )
+              }
               disabled={!enabled}
               className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed'
             >
@@ -9621,6 +9635,10 @@ const SiteConfigComponent = ({
     TMDBApiKey: '',
     TMDBProxy: '',
     TMDBReverseProxy: '',
+    BangumiDataSource: 'direct',
+    BangumiApiBaseUrl: 'https://api.bgm.tv',
+    BangumiImageBaseUrl: '',
+    BangumiProxy: '',
     BannerDataSource: 'Douban',
     RecommendationDataSource: 'Mixed',
     PansouApiUrl: '',
@@ -9726,6 +9744,11 @@ const SiteConfigComponent = ({
         TMDBApiKey: config.SiteConfig.TMDBApiKey || '',
         TMDBProxy: config.SiteConfig.TMDBProxy || '',
         TMDBReverseProxy: config.SiteConfig.TMDBReverseProxy || '',
+        BangumiDataSource: config.SiteConfig.BangumiDataSource || 'direct',
+        BangumiApiBaseUrl:
+          config.SiteConfig.BangumiApiBaseUrl || 'https://api.bgm.tv',
+        BangumiImageBaseUrl: config.SiteConfig.BangumiImageBaseUrl || '',
+        BangumiProxy: config.SiteConfig.BangumiProxy || '',
         BannerDataSource: config.SiteConfig.BannerDataSource || 'Douban',
         RecommendationDataSource:
           config.SiteConfig.RecommendationDataSource || 'Mixed',
@@ -10482,6 +10505,122 @@ const SiteConfigComponent = ({
             />
             <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
               配置 TMDB 反向代理 Base URL（可选）
+            </p>
+          </div>
+        </div>
+      </details>
+
+      {/* 动漫/Bangumi 配置 */}
+      <details className='pt-4 border-t border-gray-200 dark:border-gray-700'>
+        <summary className='text-sm font-semibold text-gray-900 dark:text-gray-100 cursor-pointer'>
+          动漫数据源配置
+        </summary>
+        <div className='mt-4 space-y-4'>
+          <p className='text-xs text-amber-600 dark:text-amber-400'>
+            Bangumi
+            在部分国内网络环境下可能无法直连，可按部署环境选择合适的数据源。
+          </p>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              默认动漫数据源
+            </label>
+            <div className='inline-flex rounded-lg bg-gray-100 p-1 dark:bg-gray-800'>
+              {[
+                { value: 'direct', label: '直连' },
+                { value: 'server-proxy', label: '服务器代理' },
+                { value: 'custom-baseurl', label: '自定义 Base URL' },
+              ].map((option) => (
+                <button
+                  key={option.value}
+                  type='button'
+                  onClick={() =>
+                    setSiteSettings((prev) => ({
+                      ...prev,
+                      BangumiDataSource:
+                        option.value as SiteConfig['BangumiDataSource'],
+                    }))
+                  }
+                  className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
+                    (siteSettings.BangumiDataSource || 'direct') ===
+                    option.value
+                      ? 'bg-white text-green-600 shadow-sm dark:bg-gray-700 dark:text-green-400'
+                      : 'text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              作为新用户本地设置的默认动漫数据源；用户仍可在本地网络配置中覆盖。
+            </p>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              Bangumi Base URL
+            </label>
+            <input
+              type='text'
+              placeholder='https://api.bgm.tv'
+              value={siteSettings.BangumiApiBaseUrl || ''}
+              onChange={(e) =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  BangumiApiBaseUrl: e.target.value,
+                }))
+              }
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent'
+            />
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              Bangumi 官方或自建反代地址，不要带末尾路径，例如
+              https://api.bgm.tv。
+            </p>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              Bangumi 图片 Base URL
+            </label>
+            <input
+              type='text'
+              placeholder='例如: https://proxy.example.com'
+              value={siteSettings.BangumiImageBaseUrl || ''}
+              onChange={(e) =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  BangumiImageBaseUrl: e.target.value,
+                }))
+              }
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent'
+            />
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              用于替换 Bangumi
+              图片域名。只需填写基础部分，不需要填写完整图片路径，例如
+              https://lain.bgm.tv。
+            </p>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              Bangumi 系统代理
+            </label>
+            <input
+              type='text'
+              placeholder='例如: http://127.0.0.1:7890'
+              value={siteSettings.BangumiProxy || ''}
+              onChange={(e) =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  BangumiProxy: e.target.value,
+                }))
+              }
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent'
+            />
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              用于服务器代理访问 Bangumi API。Cloudflare
+              部署环境下不会使用该代理。
             </p>
           </div>
         </div>
@@ -12324,60 +12463,71 @@ const OPDSConfigComponent = ({
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [legadoSubscriptionName, setLegadoSubscriptionName] = useState('');
   const [legadoSubscriptionUrl, setLegadoSubscriptionUrl] = useState('');
-  const [legadoSubscriptions, setLegadoSubscriptions] = useState<NonNullable<AdminConfig['OPDSConfig']>['LegadoSubscriptions']>([]);
+  const [legadoSubscriptions, setLegadoSubscriptions] = useState<
+    NonNullable<AdminConfig['OPDSConfig']>['LegadoSubscriptions']
+  >([]);
 
   useEffect(() => {
     if (!config?.OPDSConfig) return;
     setEnabled(config.OPDSConfig.Enabled || false);
     setCacheTTL(config.OPDSConfig.CacheTTL || 10 * 60 * 1000);
-    setSources((config.OPDSConfig.Sources || []).map((item, index) => ({
-      id: item.id || `source_${index + 1}`,
-      name: item.name || `书源 ${index + 1}`,
-      type: 'opds' as const,
-      url: item.url || '',
-      enabled: item.enabled !== false,
-      authMode: item.authMode || 'none',
-      username: item.username || '',
-      password: item.password || '',
-      headerName: item.headerName || '',
-      headerValue: item.headerValue || '',
-      searchTemplate: item.searchTemplate || '',
-      preferFormat: item.preferFormat || ['epub', 'pdf'],
-      language: item.language || '',
-    })));
+    setSources(
+      (config.OPDSConfig.Sources || []).map((item, index) => ({
+        id: item.id || `source_${index + 1}`,
+        name: item.name || `书源 ${index + 1}`,
+        type: 'opds' as const,
+        url: item.url || '',
+        enabled: item.enabled !== false,
+        authMode: item.authMode || 'none',
+        username: item.username || '',
+        password: item.password || '',
+        headerName: item.headerName || '',
+        headerValue: item.headerValue || '',
+        searchTemplate: item.searchTemplate || '',
+        preferFormat: item.preferFormat || ['epub', 'pdf'],
+        language: item.language || '',
+      }))
+    );
     setLegadoSubscriptions(config.OPDSConfig.LegadoSubscriptions || []);
     setEditingIndex(null);
   }, [config]);
 
   const updateSource = (index: number, patch: Partial<BookSource>) => {
-    setSources((prev) => prev.map((item, idx) => idx === index ? { ...item, ...patch } : item));
+    setSources((prev) =>
+      prev.map((item, idx) => (idx === index ? { ...item, ...patch } : item))
+    );
   };
 
   const addSource = () => {
     setSources((prev) => {
       const nextIndex = prev.length;
       setEditingIndex(nextIndex);
-      return [...prev, {
-        id: `source_${nextIndex + 1}`,
-        name: `书源 ${nextIndex + 1}`,
-        type: 'opds' as const,
-        url: '',
-        enabled: true,
-        authMode: 'none' as const,
-        username: '',
-        password: '',
-        headerName: '',
-        headerValue: '',
-        searchTemplate: '',
-        preferFormat: ['epub' as const, 'pdf' as const],
-        language: '',
-      }];
+      return [
+        ...prev,
+        {
+          id: `source_${nextIndex + 1}`,
+          name: `书源 ${nextIndex + 1}`,
+          type: 'opds' as const,
+          url: '',
+          enabled: true,
+          authMode: 'none' as const,
+          username: '',
+          password: '',
+          headerName: '',
+          headerValue: '',
+          searchTemplate: '',
+          preferFormat: ['epub' as const, 'pdf' as const],
+          language: '',
+        },
+      ];
     });
   };
 
   const removeSource = (index: number) => {
     setSources((prev) => prev.filter((_, idx) => idx !== index));
-    setEditingIndex((prev) => prev === index ? null : prev !== null && prev > index ? prev - 1 : prev);
+    setEditingIndex((prev) =>
+      prev === index ? null : prev !== null && prev > index ? prev - 1 : prev
+    );
   };
 
   const normalizeSource = (source: BookSource, index: number) => ({
@@ -12389,10 +12539,13 @@ const OPDSConfigComponent = ({
     authMode: source.authMode || 'none',
     username: source.authMode === 'none' ? '' : source.username?.trim() || '',
     password: source.authMode === 'none' ? '' : source.password || '',
-    headerName: source.authMode === 'header' ? source.headerName?.trim() || '' : '',
+    headerName:
+      source.authMode === 'header' ? source.headerName?.trim() || '' : '',
     headerValue: source.authMode === 'header' ? source.headerValue || '' : '',
     searchTemplate: source.searchTemplate?.trim() || '',
-    preferFormat: source.preferFormat?.length ? source.preferFormat : ['epub', 'pdf'],
+    preferFormat: source.preferFormat?.length
+      ? source.preferFormat
+      : ['epub', 'pdf'],
     language: source.language?.trim() || '',
   });
 
@@ -12417,7 +12570,10 @@ const OPDSConfigComponent = ({
         showSuccess('电子书源配置已保存', showAlert);
         await refreshConfig();
       } catch (error) {
-        showError(error instanceof Error ? error.message : '保存失败', showAlert);
+        showError(
+          error instanceof Error ? error.message : '保存失败',
+          showAlert
+        );
         throw error;
       }
     });
@@ -12431,14 +12587,29 @@ const OPDSConfigComponent = ({
         const response = await fetch('/api/admin/opds', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ Enabled: true, CacheTTL: Math.max(60_000, cacheTTL || 10 * 60 * 1000), Sources: [source] }),
+          body: JSON.stringify({
+            Enabled: true,
+            CacheTTL: Math.max(60_000, cacheTTL || 10 * 60 * 1000),
+            Sources: [source],
+          }),
         });
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.message || data.error || '测试连接失败');
+        if (!response.ok || !data.success)
+          throw new Error(data.message || data.error || '测试连接失败');
         const result = Array.isArray(data.results) ? data.results[0] : null;
-        showSuccess(result ? `${result.name}: 分类${result.capability.catalogSupported ? '√' : '×'} / 搜索${result.capability.searchSupported ? '√' : '×'}` : '测试成功', showAlert);
+        showSuccess(
+          result
+            ? `${result.name}: 分类${
+                result.capability.catalogSupported ? '√' : '×'
+              } / 搜索${result.capability.searchSupported ? '√' : '×'}`
+            : '测试成功',
+          showAlert
+        );
       } catch (error) {
-        showError(error instanceof Error ? error.message : '测试连接失败', showAlert);
+        showError(
+          error instanceof Error ? error.message : '测试连接失败',
+          showAlert
+        );
         throw error;
       }
     });
@@ -12450,16 +12621,26 @@ const OPDSConfigComponent = ({
         const response = await fetch('/api/admin/legado-subscriptions/import', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: legadoSubscriptionName, url: legadoSubscriptionUrl }),
+          body: JSON.stringify({
+            name: legadoSubscriptionName,
+            url: legadoSubscriptionUrl,
+          }),
         });
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || '导入 Legado 订阅失败');
+        if (!response.ok || !data.success)
+          throw new Error(data.error || '导入 Legado 订阅失败');
         setLegadoSubscriptionName('');
         setLegadoSubscriptionUrl('');
-        showSuccess(`已导入 ${data.subscription?.sourceCount || 0} 个 Legado 书源`, showAlert);
+        showSuccess(
+          `已导入 ${data.subscription?.sourceCount || 0} 个 Legado 书源`,
+          showAlert
+        );
         await refreshConfig();
       } catch (error) {
-        showError(error instanceof Error ? error.message : '导入 Legado 订阅失败', showAlert);
+        showError(
+          error instanceof Error ? error.message : '导入 Legado 订阅失败',
+          showAlert
+        );
         throw error;
       }
     });
@@ -12468,13 +12649,23 @@ const OPDSConfigComponent = ({
   const refreshLegadoSubscription = async (id: string) => {
     await withLoading(`refreshLegadoSubscription-${id}`, async () => {
       try {
-        const response = await fetch(`/api/admin/legado-subscriptions/${encodeURIComponent(id)}/refresh`, { method: 'POST' });
+        const response = await fetch(
+          `/api/admin/legado-subscriptions/${encodeURIComponent(id)}/refresh`,
+          { method: 'POST' }
+        );
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || '刷新 Legado 订阅失败');
-        showSuccess(`已同步 ${data.subscription?.sourceCount || 0} 个 Legado 书源`, showAlert);
+        if (!response.ok || !data.success)
+          throw new Error(data.error || '刷新 Legado 订阅失败');
+        showSuccess(
+          `已同步 ${data.subscription?.sourceCount || 0} 个 Legado 书源`,
+          showAlert
+        );
         await refreshConfig();
       } catch (error) {
-        showError(error instanceof Error ? error.message : '刷新 Legado 订阅失败', showAlert);
+        showError(
+          error instanceof Error ? error.message : '刷新 Legado 订阅失败',
+          showAlert
+        );
         throw error;
       }
     });
@@ -12483,13 +12674,20 @@ const OPDSConfigComponent = ({
   const deleteLegadoSubscription = async (id: string) => {
     await withLoading(`deleteLegadoSubscription-${id}`, async () => {
       try {
-        const response = await fetch(`/api/admin/legado-subscriptions/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        const response = await fetch(
+          `/api/admin/legado-subscriptions/${encodeURIComponent(id)}`,
+          { method: 'DELETE' }
+        );
         const data = await response.json();
-        if (!response.ok || !data.success) throw new Error(data.error || '删除 Legado 订阅失败');
+        if (!response.ok || !data.success)
+          throw new Error(data.error || '删除 Legado 订阅失败');
         showSuccess('Legado 订阅已删除', showAlert);
         await refreshConfig();
       } catch (error) {
-        showError(error instanceof Error ? error.message : '删除 Legado 订阅失败', showAlert);
+        showError(
+          error instanceof Error ? error.message : '删除 Legado 订阅失败',
+          showAlert
+        );
         throw error;
       }
     });
@@ -12498,7 +12696,9 @@ const OPDSConfigComponent = ({
   return (
     <div className='space-y-6'>
       <div className='rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20'>
-        <h3 className='mb-2 text-sm font-medium text-amber-900 dark:text-amber-100'>关于电子书馆 / OPDS / Legado</h3>
+        <h3 className='mb-2 text-sm font-medium text-amber-900 dark:text-amber-100'>
+          关于电子书馆 / OPDS / Legado
+        </h3>
         <div className='space-y-1 text-sm text-amber-800 dark:text-amber-200'>
           <p>• OPDS 源手动配置。</p>
           <p>• Legado 通过订阅 URL 导入。</p>
@@ -12507,87 +12707,353 @@ const OPDSConfigComponent = ({
 
       <div className='flex items-center justify-between border-b border-gray-200 py-3 dark:border-gray-700'>
         <div>
-          <h3 className='text-sm font-medium text-gray-900 dark:text-white'>启用电子书馆</h3>
-          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>关闭后不会展示电子书入口。</p>
+          <h3 className='text-sm font-medium text-gray-900 dark:text-white'>
+            启用电子书馆
+          </h3>
+          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+            关闭后不会展示电子书入口。
+          </p>
         </div>
-        <button onClick={() => setEnabled(!enabled)} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${enabled ? 'bg-amber-600' : 'bg-gray-200 dark:bg-gray-700'}`}>
-          <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${enabled ? 'translate-x-6' : 'translate-x-1'}`} />
+        <button
+          onClick={() => setEnabled(!enabled)}
+          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+            enabled ? 'bg-amber-600' : 'bg-gray-200 dark:bg-gray-700'
+          }`}
+        >
+          <span
+            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+              enabled ? 'translate-x-6' : 'translate-x-1'
+            }`}
+          />
         </button>
       </div>
 
       <div>
-        <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>Feed 缓存时长（毫秒）</label>
-        <input type='number' min='60000' value={cacheTTL} onChange={(e) => setCacheTTL(parseInt(e.target.value) || 10 * 60 * 1000)} className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' />
+        <label className='mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300'>
+          Feed 缓存时长（毫秒）
+        </label>
+        <input
+          type='number'
+          min='60000'
+          value={cacheTTL}
+          onChange={(e) =>
+            setCacheTTL(parseInt(e.target.value) || 10 * 60 * 1000)
+          }
+          className='w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+        />
       </div>
 
       <div className='rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-900/20'>
         <div className='mb-3 flex items-center justify-between gap-3'>
           <div>
-            <h4 className='text-sm font-medium text-amber-900 dark:text-amber-100'>Legado 订阅</h4>
-            <p className='mt-1 text-xs text-amber-800 dark:text-amber-200'>目前处于实验性阶段，仅支持部分简单订阅。</p>
+            <h4 className='text-sm font-medium text-amber-900 dark:text-amber-100'>
+              Legado 订阅
+            </h4>
+            <p className='mt-1 text-xs text-amber-800 dark:text-amber-200'>
+              目前处于实验性阶段，仅支持部分简单订阅。
+            </p>
           </div>
-          <button type='button' onClick={importLegadoSubscription} disabled={!legadoSubscriptionUrl.trim() || isLoading('importLegadoSubscription')} className={buttonStyles.primarySmall}>{isLoading('importLegadoSubscription') ? '导入中...' : '导入订阅'}</button>
+          <button
+            type='button'
+            onClick={importLegadoSubscription}
+            disabled={
+              !legadoSubscriptionUrl.trim() ||
+              isLoading('importLegadoSubscription')
+            }
+            className={buttonStyles.primarySmall}
+          >
+            {isLoading('importLegadoSubscription') ? '导入中...' : '导入订阅'}
+          </button>
         </div>
         <div className='grid grid-cols-1 gap-3 md:grid-cols-2'>
-          <input type='text' value={legadoSubscriptionName} onChange={(e) => setLegadoSubscriptionName(e.target.value)} placeholder='订阅名称（可选）' className='rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-100' />
-          <input type='text' value={legadoSubscriptionUrl} onChange={(e) => setLegadoSubscriptionUrl(e.target.value)} placeholder='https://example.com/bookSource.json' className='rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-100' />
+          <input
+            type='text'
+            value={legadoSubscriptionName}
+            onChange={(e) => setLegadoSubscriptionName(e.target.value)}
+            placeholder='订阅名称（可选）'
+            className='rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-100'
+          />
+          <input
+            type='text'
+            value={legadoSubscriptionUrl}
+            onChange={(e) => setLegadoSubscriptionUrl(e.target.value)}
+            placeholder='https://example.com/bookSource.json'
+            className='rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-900 dark:border-amber-800 dark:bg-gray-900 dark:text-gray-100'
+          />
         </div>
         <div className='mt-4 space-y-2'>
-          {(legadoSubscriptions || []).length === 0 ? <div className='text-xs text-amber-800 dark:text-amber-200'>暂无 Legado 订阅。</div> : (legadoSubscriptions || []).map((sub) => (
-            <div key={sub.id} className='rounded-lg border border-amber-200 bg-white p-3 text-sm dark:border-amber-800 dark:bg-gray-900'>
-              <div className='flex flex-wrap items-start justify-between gap-3'>
-                <div className='min-w-0 flex-1'>
-                  <div className='font-medium text-gray-900 dark:text-gray-100'>{sub.name}</div>
-                  <div className='mt-1 break-all text-xs text-gray-500 dark:text-gray-400'>{sub.url}</div>
-                  <div className='mt-1 text-xs text-gray-500 dark:text-gray-400'>源数量：{sub.sourceCount || 0} · 上次同步：{sub.lastSuccessAt ? new Date(sub.lastSuccessAt).toLocaleString() : '-'}</div>
-                  {sub.lastError ? <div className='mt-1 text-xs text-red-500'>{sub.lastError}</div> : null}
-                </div>
-                <div className='flex items-center gap-2'>
-                  <button type='button' onClick={() => setLegadoSubscriptions((prev) => (prev || []).map((item) => item.id === sub.id ? { ...item, enabled: item.enabled === false } : item))} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${sub.enabled !== false ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${sub.enabled !== false ? 'translate-x-6' : 'translate-x-1'}`} /></button>
-                  <button type='button' onClick={() => refreshLegadoSubscription(sub.id)} disabled={isLoading(`refreshLegadoSubscription-${sub.id}`)} className={buttonStyles.secondarySmall}>{isLoading(`refreshLegadoSubscription-${sub.id}`) ? '同步中...' : '同步'}</button>
-                  <button type='button' onClick={() => deleteLegadoSubscription(sub.id)} disabled={isLoading(`deleteLegadoSubscription-${sub.id}`)} className={buttonStyles.dangerSmall}>删除</button>
+          {(legadoSubscriptions || []).length === 0 ? (
+            <div className='text-xs text-amber-800 dark:text-amber-200'>
+              暂无 Legado 订阅。
+            </div>
+          ) : (
+            (legadoSubscriptions || []).map((sub) => (
+              <div
+                key={sub.id}
+                className='rounded-lg border border-amber-200 bg-white p-3 text-sm dark:border-amber-800 dark:bg-gray-900'
+              >
+                <div className='flex flex-wrap items-start justify-between gap-3'>
+                  <div className='min-w-0 flex-1'>
+                    <div className='font-medium text-gray-900 dark:text-gray-100'>
+                      {sub.name}
+                    </div>
+                    <div className='mt-1 break-all text-xs text-gray-500 dark:text-gray-400'>
+                      {sub.url}
+                    </div>
+                    <div className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                      源数量：{sub.sourceCount || 0} · 上次同步：
+                      {sub.lastSuccessAt
+                        ? new Date(sub.lastSuccessAt).toLocaleString()
+                        : '-'}
+                    </div>
+                    {sub.lastError ? (
+                      <div className='mt-1 text-xs text-red-500'>
+                        {sub.lastError}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className='flex items-center gap-2'>
+                    <button
+                      type='button'
+                      onClick={() =>
+                        setLegadoSubscriptions((prev) =>
+                          (prev || []).map((item) =>
+                            item.id === sub.id
+                              ? { ...item, enabled: item.enabled === false }
+                              : item
+                          )
+                        )
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        sub.enabled !== false
+                          ? 'bg-green-600'
+                          : 'bg-gray-200 dark:bg-gray-700'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          sub.enabled !== false
+                            ? 'translate-x-6'
+                            : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => refreshLegadoSubscription(sub.id)}
+                      disabled={isLoading(
+                        `refreshLegadoSubscription-${sub.id}`
+                      )}
+                      className={buttonStyles.secondarySmall}
+                    >
+                      {isLoading(`refreshLegadoSubscription-${sub.id}`)
+                        ? '同步中...'
+                        : '同步'}
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => deleteLegadoSubscription(sub.id)}
+                      disabled={isLoading(`deleteLegadoSubscription-${sub.id}`)}
+                      className={buttonStyles.dangerSmall}
+                    >
+                      删除
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
 
       <div className='space-y-4'>
         <div className='flex items-center justify-between'>
-          <h3 className='text-sm font-medium text-gray-900 dark:text-white'>OPDS 书源列表</h3>
-          <button type='button' onClick={addSource} className={buttonStyles.primary}><Plus size={16} className='mr-1 inline' />添加 OPDS</button>
+          <h3 className='text-sm font-medium text-gray-900 dark:text-white'>
+            OPDS 书源列表
+          </h3>
+          <button
+            type='button'
+            onClick={addSource}
+            className={buttonStyles.primary}
+          >
+            <Plus size={16} className='mr-1 inline' />
+            添加 OPDS
+          </button>
         </div>
-        {sources.length === 0 ? <div className='rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400'>暂无 OPDS 书源。</div> : null}
+        {sources.length === 0 ? (
+          <div className='rounded-lg border border-dashed border-gray-300 p-4 text-sm text-gray-500 dark:border-gray-600 dark:text-gray-400'>
+            暂无 OPDS 书源。
+          </div>
+        ) : null}
         <div className='space-y-3'>
           {sources.map((source, index) => {
             const isEditing = editingIndex === index;
             return (
-              <div key={`opds-source-${index}`} className='rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900'>
+              <div
+                key={`opds-source-${index}`}
+                className='rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-900'
+              >
                 <div className='flex flex-wrap items-start justify-between gap-3'>
                   <div className='min-w-0 flex-1'>
-                    <div className='font-medium text-gray-900 dark:text-gray-100'>{source.name || `书源 ${index + 1}`}</div>
-                    <div className='mt-1 break-all text-xs text-gray-500 dark:text-gray-400'>{source.url || '-'}</div>
+                    <div className='font-medium text-gray-900 dark:text-gray-100'>
+                      {source.name || `书源 ${index + 1}`}
+                    </div>
+                    <div className='mt-1 break-all text-xs text-gray-500 dark:text-gray-400'>
+                      {source.url || '-'}
+                    </div>
                   </div>
                   <div className='flex items-center gap-2'>
-                    <button type='button' onClick={() => updateSource(index, { enabled: source.enabled === false })} className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${source.enabled !== false ? 'bg-green-600' : 'bg-gray-200 dark:bg-gray-700'}`}><span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${source.enabled !== false ? 'translate-x-6' : 'translate-x-1'}`} /></button>
-                    <button type='button' onClick={() => handleTest(index)} disabled={isLoading(`testOPDSConfig-${index}`)} className={buttonStyles.primarySmall}>{isLoading(`testOPDSConfig-${index}`) ? '测试中...' : '测试'}</button>
-                    <button type='button' onClick={() => setEditingIndex(isEditing ? null : index)} className={buttonStyles.secondarySmall}>{isEditing ? '收起' : '编辑'}</button>
-                    <button type='button' onClick={() => removeSource(index)} className={buttonStyles.dangerSmall}>删除</button>
+                    <button
+                      type='button'
+                      onClick={() =>
+                        updateSource(index, {
+                          enabled: source.enabled === false,
+                        })
+                      }
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                        source.enabled !== false
+                          ? 'bg-green-600'
+                          : 'bg-gray-200 dark:bg-gray-700'
+                      }`}
+                    >
+                      <span
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                          source.enabled !== false
+                            ? 'translate-x-6'
+                            : 'translate-x-1'
+                        }`}
+                      />
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => handleTest(index)}
+                      disabled={isLoading(`testOPDSConfig-${index}`)}
+                      className={buttonStyles.primarySmall}
+                    >
+                      {isLoading(`testOPDSConfig-${index}`)
+                        ? '测试中...'
+                        : '测试'}
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => setEditingIndex(isEditing ? null : index)}
+                      className={buttonStyles.secondarySmall}
+                    >
+                      {isEditing ? '收起' : '编辑'}
+                    </button>
+                    <button
+                      type='button'
+                      onClick={() => removeSource(index)}
+                      className={buttonStyles.dangerSmall}
+                    >
+                      删除
+                    </button>
                   </div>
                 </div>
                 {isEditing ? (
                   <div className='mt-4 grid grid-cols-1 gap-4 border-t border-gray-200 pt-4 dark:border-gray-700 md:grid-cols-2'>
-                    <input type='text' value={source.id} onChange={(e) => updateSource(index, { id: e.target.value })} placeholder='书源 ID' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' />
-                    <input type='text' value={source.name} onChange={(e) => updateSource(index, { name: e.target.value })} placeholder='书源名称' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' />
-                    <input type='text' value={source.url} onChange={(e) => updateSource(index, { url: e.target.value })} placeholder='https://example.com/opds' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 md:col-span-2' />
-                    <select value={source.authMode || 'none'} onChange={(e) => updateSource(index, { authMode: e.target.value as BookSource['authMode'] })} className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'>
-                      <option value='none'>无认证</option><option value='basic'>Basic Auth</option><option value='header'>自定义 Header</option>
+                    <input
+                      type='text'
+                      value={source.id}
+                      onChange={(e) =>
+                        updateSource(index, { id: e.target.value })
+                      }
+                      placeholder='书源 ID'
+                      className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                    />
+                    <input
+                      type='text'
+                      value={source.name}
+                      onChange={(e) =>
+                        updateSource(index, { name: e.target.value })
+                      }
+                      placeholder='书源名称'
+                      className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                    />
+                    <input
+                      type='text'
+                      value={source.url}
+                      onChange={(e) =>
+                        updateSource(index, { url: e.target.value })
+                      }
+                      placeholder='https://example.com/opds'
+                      className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 md:col-span-2'
+                    />
+                    <select
+                      value={source.authMode || 'none'}
+                      onChange={(e) =>
+                        updateSource(index, {
+                          authMode: e.target.value as BookSource['authMode'],
+                        })
+                      }
+                      className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                    >
+                      <option value='none'>无认证</option>
+                      <option value='basic'>Basic Auth</option>
+                      <option value='header'>自定义 Header</option>
                     </select>
-                    <input type='text' value={source.language || ''} onChange={(e) => updateSource(index, { language: e.target.value })} placeholder='语言 zh / en' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' />
-                    <input type='text' value={source.searchTemplate || ''} onChange={(e) => updateSource(index, { searchTemplate: e.target.value })} placeholder='搜索模板 https://...{searchTerms}' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 md:col-span-2' />
-                    {source.authMode === 'basic' ? <><input type='text' value={source.username || ''} onChange={(e) => updateSource(index, { username: e.target.value })} placeholder='用户名' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' /><input type='password' value={source.password || ''} onChange={(e) => updateSource(index, { password: e.target.value })} placeholder='密码' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' /></> : null}
-                    {source.authMode === 'header' ? <><input type='text' value={source.headerName || ''} onChange={(e) => updateSource(index, { headerName: e.target.value })} placeholder='Header 名称' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' /><input type='password' value={source.headerValue || ''} onChange={(e) => updateSource(index, { headerValue: e.target.value })} placeholder='Header 值' className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100' /></> : null}
+                    <input
+                      type='text'
+                      value={source.language || ''}
+                      onChange={(e) =>
+                        updateSource(index, { language: e.target.value })
+                      }
+                      placeholder='语言 zh / en'
+                      className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                    />
+                    <input
+                      type='text'
+                      value={source.searchTemplate || ''}
+                      onChange={(e) =>
+                        updateSource(index, { searchTemplate: e.target.value })
+                      }
+                      placeholder='搜索模板 https://...{searchTerms}'
+                      className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 md:col-span-2'
+                    />
+                    {source.authMode === 'basic' ? (
+                      <>
+                        <input
+                          type='text'
+                          value={source.username || ''}
+                          onChange={(e) =>
+                            updateSource(index, { username: e.target.value })
+                          }
+                          placeholder='用户名'
+                          className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                        />
+                        <input
+                          type='password'
+                          value={source.password || ''}
+                          onChange={(e) =>
+                            updateSource(index, { password: e.target.value })
+                          }
+                          placeholder='密码'
+                          className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                        />
+                      </>
+                    ) : null}
+                    {source.authMode === 'header' ? (
+                      <>
+                        <input
+                          type='text'
+                          value={source.headerName || ''}
+                          onChange={(e) =>
+                            updateSource(index, { headerName: e.target.value })
+                          }
+                          placeholder='Header 名称'
+                          className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                        />
+                        <input
+                          type='password'
+                          value={source.headerValue || ''}
+                          onChange={(e) =>
+                            updateSource(index, { headerValue: e.target.value })
+                          }
+                          placeholder='Header 值'
+                          className='rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100'
+                        />
+                      </>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -12597,10 +13063,24 @@ const OPDSConfigComponent = ({
       </div>
 
       <div className='flex gap-3'>
-        <button onClick={handleSave} disabled={isLoading('saveOPDSConfig')} className={buttonStyles.success}>{isLoading('saveOPDSConfig') ? '保存中...' : '保存电子书源配置'}</button>
+        <button
+          onClick={handleSave}
+          disabled={isLoading('saveOPDSConfig')}
+          className={buttonStyles.success}
+        >
+          {isLoading('saveOPDSConfig') ? '保存中...' : '保存电子书源配置'}
+        </button>
       </div>
 
-      <AlertModal isOpen={alertModal.isOpen} onClose={hideAlert} type={alertModal.type} title={alertModal.title} message={alertModal.message} timer={alertModal.timer} showConfirm={alertModal.showConfirm} />
+      <AlertModal
+        isOpen={alertModal.isOpen}
+        onClose={hideAlert}
+        type={alertModal.type}
+        title={alertModal.title}
+        message={alertModal.message}
+        timer={alertModal.timer}
+        showConfirm={alertModal.showConfirm}
+      />
     </div>
   );
 };
@@ -15717,33 +16197,34 @@ function AdminPageClient() {
   const userLimit = 10;
 
   // 获取新版本用户列表
-  const fetchUsersV2 = useCallback(async (page = 1, search = userSearch) => {
-    try {
-      setUserListLoading(true);
-      const params = new URLSearchParams({
-        page: String(page),
-        limit: String(userLimit),
-      });
-      const trimmedSearch = search.trim();
-      if (trimmedSearch) {
-        params.set('search', trimmedSearch);
+  const fetchUsersV2 = useCallback(
+    async (page = 1, search = userSearch) => {
+      try {
+        setUserListLoading(true);
+        const params = new URLSearchParams({
+          page: String(page),
+          limit: String(userLimit),
+        });
+        const trimmedSearch = search.trim();
+        if (trimmedSearch) {
+          params.set('search', trimmedSearch);
+        }
+        const response = await fetch(`/api/admin/users?${params.toString()}`);
+        if (response.ok) {
+          const data = await response.json();
+          setUsersV2(data.users);
+          setUserTotalPages(data.totalPages || 1);
+          setUserTotal(data.total || 0);
+          setUserPage(page);
+        }
+      } catch (err) {
+        console.error('获取新版本用户列表失败:', err);
+      } finally {
+        setUserListLoading(false);
       }
-      const response = await fetch(
-        `/api/admin/users?${params.toString()}`
-      );
-      if (response.ok) {
-        const data = await response.json();
-        setUsersV2(data.users);
-        setUserTotalPages(data.totalPages || 1);
-        setUserTotal(data.total || 0);
-        setUserPage(page);
-      }
-    } catch (err) {
-      console.error('获取新版本用户列表失败:', err);
-    } finally {
-      setUserListLoading(false);
-    }
-  }, [userSearch]);
+    },
+    [userSearch]
+  );
 
   // 刷新配置和用户列表
   const refreshConfigAndUsers = useCallback(async () => {
