@@ -9666,6 +9666,7 @@ function PlayPageClient() {
                 sourceSearchError={sourceSearchError}
                 backgroundSourcesLoading={backgroundSourcesLoading}
                 precomputedVideoInfo={precomputedVideoInfo}
+                useLightTextOnBackdrop={!!tmdbBackdrop}
                 onDanmakuSelect={(selection) => handleDanmakuSelect(selection, true)}
                 currentDanmakuSelection={currentDanmakuSelection}
                 onUploadDanmaku={handleUploadDanmaku}
@@ -9821,11 +9822,11 @@ function PlayPageClient() {
                           })}
                         </div>
                         {/* 评分数值 */}
-                        <span className='text-gray-700 dark:text-gray-300 font-semibold'>
+                        <span className={`font-semibold ${tmdbBackdrop ? 'text-white' : 'text-gray-700 dark:text-gray-300'}`}>
                           {doubanRating.value.toFixed(1)}
                         </span>
                         {/* 评分人数 */}
-                        <span className='text-gray-500 dark:text-gray-400 text-sm'>
+                        <span className={`text-sm ${tmdbBackdrop ? 'text-white/80' : 'text-gray-500 dark:text-gray-400'}`}>
                           ({doubanRating.count.toLocaleString()}人评价)
                         </span>
                       </div>
