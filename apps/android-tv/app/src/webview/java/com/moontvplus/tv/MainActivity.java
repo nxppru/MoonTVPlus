@@ -70,7 +70,7 @@ public class MainActivity extends Activity {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         }
-        settings.setUserAgentString(settings.getUserAgentString() + " MoonTVPlusAndroidTV");
+        settings.setUserAgentString(settings.getUserAgentString() + " MoonTVPlusAndroidTV WebView");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -90,8 +90,6 @@ public class MainActivity extends Activity {
 
             @Override
             public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) {
-                // Do not bypass TLS certificate errors. HTTP is allowed by network security config;
-                // invalid HTTPS certificates should still be blocked for safety.
                 handler.cancel();
             }
         });

@@ -113,12 +113,8 @@ export default async function RootLayout({
   let musicFeatureEnabled = false;
   let suwayomiEnabled = false;
   let booksEnabled =
-    process.env.OPDS_ENABLED === 'true' &&
-    !!(
-      process.env.OPDS_URL ||
-      process.env.NEXT_PUBLIC_OPDS_URL ||
-      process.env.OPDS_SOURCES_JSON
-    );
+    process.env.OPDS_ENABLED === 'true' ||
+    process.env.LEGADO_ENABLED === 'true';
   let musicProxyEnabled = true;
   let advancedRecommendationEnabled = false;
   let userFeatureAccess =
@@ -201,12 +197,9 @@ export default async function RootLayout({
     );
     // 电子书功能配置
     const opdsConfig = config.OPDSConfig;
-    const rawOpdsSources = opdsConfig?.Sources;
-    const opdsSources = Array.isArray(rawOpdsSources) ? rawOpdsSources : [];
-    booksEnabled = !!(
-      opdsConfig?.Enabled &&
-      opdsSources.some((source) => source?.enabled !== false && !!source?.url)
-    );
+    // 电子书馆同时支持 OPDS 与 Legado。Legado 源通过订阅单独配置，
+    // 不一定会出现在 OPDS Sources 中；入口应由“启用电子书馆”开关控制。
+    booksEnabled = !!opdsConfig?.Enabled;
     // 高级推荐功能配置：存在已启用视频源脚本时显示
     advancedRecommendationEnabled =
       (await listEnabledSourceScripts()).length > 0;

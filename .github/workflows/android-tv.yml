@@ -40,12 +40,26 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - variant: standard
+          - variant: standard-webview
+            flavor: webview
+            flavor_task: Webview
             min_sdk: '23'
-            label: android6plus
-          - variant: compat
+            label: webview-android6plus
+          - variant: compat-webview
+            flavor: webview
+            flavor_task: Webview
             min_sdk: '21'
-            label: android5plus
+            label: webview-android5plus
+          - variant: standard-gecko
+            flavor: gecko
+            flavor_task: Gecko
+            min_sdk: '23'
+            label: geckoview-android6plus
+          - variant: compat-gecko
+            flavor: gecko
+            flavor_task: Gecko
+            min_sdk: '21'
+            label: geckoview-android5plus
 
     steps:
       - name: Checkout source code
@@ -74,13 +88,25 @@ jobs:
           cp public/logo.png apps/android-tv/app/src/main/res/drawable/logo.png
 
       - name: Decode Android signing keystore
+        id: signing
         env:
           ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ] && [ -n "$ANDROID_KEYSTORE_PASSWORD" ] && [ -n "$ANDROID_KEY_ALIAS" ] && [ -n "$ANDROID_KEY_PASSWORD" ]; then
             echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > /tmp/android-tv-release.keystore
+            echo "build_type=release" >> "$GITHUB_OUTPUT"
+            echo "build_type_task=Release" >> "$GITHUB_OUTPUT"
+            echo "apk_suffix=release" >> "$GITHUB_OUTPUT"
+            echo "artifact_suffix=release-signed" >> "$GITHUB_OUTPUT"
           else
-            echo "ANDROID_KEYSTORE_BASE64 is not set, release APK will be unsigned."
+            echo "Android signing secrets are not fully set, building debug APK only."
+            echo "build_type=debug" >> "$GITHUB_OUTPUT"
+            echo "build_type_task=Debug" >> "$GITHUB_OUTPUT"
+            echo "apk_suffix=debug" >> "$GITHUB_OUTPUT"
+            echo "artifact_suffix=debug" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build APK
@@ -96,7 +122,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          gradle assembleDebug assembleRelease \
+          gradle assemble${{ matrix.flavor_task }}${{ steps.signing.outputs.build_type_task }} \
             -PBASE_URL="$BASE_URL" \
             -PAPP_NAME="$APP_NAME" \
             -PVERSION_NAME="$VERSION_NAME" \
@@ -106,13 +132,9 @@ jobs:
       - name: Collect APK artifacts
         run: |
           mkdir -p /tmp/android-tv-apks
-          cp apps/android-tv/app/build/outputs/apk/debug/app-debug.apk "/tmp/android-tv-apks/moontvplus-tv-${{ inputs.version_name }}-${{ matrix.label }}-debug.apk"
-          if [ -f apps/android-tv/app/build/outputs/apk/release/app-release.apk ]; then
-            cp apps/android-tv/app/build/outputs/apk/release/app-release.apk "/tmp/android-tv-apks/moontvplus-tv-${{ inputs.version_name }}-${{ matrix.label }}-release-signed.apk"
-          fi
-          if [ -f apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            cp apps/android-tv/app/build/outputs/apk/release/app-release-unsigned.apk "/tmp/android-tv-apks/moontvplus-tv-${{ inputs.version_name }}-${{ matrix.label }}-release-unsigned.apk"
-          fi
+          cp \
+            "apps/android-tv/app/build/outputs/apk/${{ matrix.flavor }}/${{ steps.signing.outputs.build_type }}/app-${{ matrix.flavor }}-${{ steps.signing.outputs.apk_suffix }}.apk" \
+            "/tmp/android-tv-apks/moontvplus-tv-${{ inputs.version_name }}-${{ matrix.label }}-${{ steps.signing.outputs.artifact_suffix }}.apk"
           ls -lh /tmp/android-tv-apks
 
       - name: Upload APK artifacts

@@ -33,16 +33,20 @@ import {
   ChevronDown,
   ChevronUp,
   Cloud,
+  Copy,
   Database,
   ExternalLink,
   FileText,
   FolderOpen,
   Globe,
   Mail,
+  Monitor,
   Palette,
   Plus,
   Search,
   Settings,
+  Smartphone,
+  Tablet,
   Trash2,
   Tv,
   UserPlus,
@@ -411,6 +415,7 @@ interface DataSource {
   from: 'config' | 'custom';
   proxyMode?: boolean;
   weight?: number;
+  special?: boolean;
 }
 
 // 直播源数据类型
@@ -592,10 +597,54 @@ const UserConfig = ({
   } | null>(null);
   const [showDeleteUserModal, setShowDeleteUserModal] = useState(false);
   const [deletingUser, setDeletingUser] = useState<string | null>(null);
+  const [showUserDevicesModal, setShowUserDevicesModal] = useState(false);
+  const [selectedDeviceUsername, setSelectedDeviceUsername] = useState<
+    string | null
+  >(null);
+  const [userDevices, setUserDevices] = useState<
+    Array<{
+      tokenId: string;
+      deviceInfo: string;
+      createdAt: number;
+      lastUsed: number;
+      expiresAt: number;
+      isCurrent?: boolean;
+    }>
+  >([]);
+  const [userDevicesLoading, setUserDevicesLoading] = useState(false);
+  const [revokingUserDevice, setRevokingUserDevice] = useState<string | null>(
+    null
+  );
   const trimmedUserSearch = userSearch.trim();
 
   // 当前登录用户名
   const currentUsername = getAuthInfoFromBrowserCookie()?.username || null;
+
+  // 查看用户设备弹窗打开时锁定背景滚动，避免滚动穿透
+  useEffect(() => {
+    if (!showUserDevicesModal) return;
+
+    const scrollY = window.scrollY;
+    const originalStyle = {
+      position: document.body.style.position,
+      top: document.body.style.top,
+      width: document.body.style.width,
+      overflow: document.body.style.overflow,
+    };
+
+    document.body.style.position = 'fixed';
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.width = '100%';
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.position = originalStyle.position;
+      document.body.style.top = originalStyle.top;
+      document.body.style.width = originalStyle.width;
+      document.body.style.overflow = originalStyle.overflow;
+      window.scrollTo(0, scrollY);
+    };
+  }, [showUserDevicesModal]);
 
   // 判断是否有旧版用户数据需要迁移
   const hasOldUserData =
@@ -837,6 +886,82 @@ const UserConfig = ({
   const handleDeleteUser = (username: string) => {
     setDeletingUser(username);
     setShowDeleteUserModal(true);
+  };
+
+  const getDeviceIcon = (deviceInfo: string) => {
+    const info = deviceInfo.toLowerCase();
+
+    if (
+      info.includes('mobile') ||
+      info.includes('iphone') ||
+      info.includes('android')
+    ) {
+      return Smartphone;
+    }
+
+    if (info.includes('tablet') || info.includes('ipad')) {
+      return Tablet;
+    }
+
+    return Monitor;
+  };
+
+  const handleViewUserDevices = async (username: string) => {
+    setSelectedDeviceUsername(username);
+    setShowUserDevicesModal(true);
+    setUserDevices([]);
+    setUserDevicesLoading(true);
+
+    try {
+      const params = new URLSearchParams({ username });
+      const res = await fetch(`/api/admin/user-devices?${params.toString()}`, {
+        cache: 'no-store',
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `获取设备失败: ${res.status}`);
+      }
+
+      const data = await res.json();
+      setUserDevices(Array.isArray(data.devices) ? data.devices : []);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '获取设备失败', showAlert);
+      setShowUserDevicesModal(false);
+      setSelectedDeviceUsername(null);
+    } finally {
+      setUserDevicesLoading(false);
+    }
+  };
+
+  const handleRevokeUserDevice = async (tokenId: string) => {
+    if (!selectedDeviceUsername) return;
+
+    setRevokingUserDevice(tokenId);
+    try {
+      const res = await fetch('/api/admin/user-devices', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: selectedDeviceUsername,
+          tokenId,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `登出设备失败: ${res.status}`);
+      }
+
+      setUserDevices((prev) =>
+        prev.filter((device) => device.tokenId !== tokenId)
+      );
+      showSuccess('设备已登出', showAlert);
+    } catch (err) {
+      showError(err instanceof Error ? err.message : '登出设备失败', showAlert);
+    } finally {
+      setRevokingUserDevice(null);
+    }
   };
 
   const handleConfigureUserApis = (user: {
@@ -1644,6 +1769,13 @@ const UserConfig = ({
                         user.username !== currentUsername &&
                         (role === 'owner' ||
                           (role === 'admin' && user.role === 'user'));
+
+                      // 查看设备权限：站长可查看所有用户，管理员可查看普通用户和自己
+                      const canViewDevices =
+                        role === 'owner' ||
+                        (role === 'admin' &&
+                          (user.role === 'user' ||
+                            user.username === currentUsername));
                       return (
                         <tr
                           key={user.username}
@@ -1751,6 +1883,17 @@ const UserConfig = ({
                             </div>
                           </td>
                           <td className='px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2'>
+                            {/* 查看设备按钮 */}
+                            {canViewDevices && (
+                              <button
+                                onClick={() =>
+                                  handleViewUserDevices(user.username)
+                                }
+                                className={buttonStyles.roundedSecondary}
+                              >
+                                查看设备
+                              </button>
+                            )}
                             {/* 修改密码按钮 */}
                             {canChangePassword && (
                               <button
@@ -1921,6 +2064,159 @@ const UserConfig = ({
           )}
         </div>
       </div>
+
+      {/* 查看用户设备弹窗 */}
+      {showUserDevicesModal &&
+        selectedDeviceUsername &&
+        createPortal(
+          <div
+            className='fixed inset-0 bg-black bg-opacity-50 z-[10002] flex items-center justify-center p-4'
+            onClick={() => {
+              setShowUserDevicesModal(false);
+              setSelectedDeviceUsername(null);
+              setUserDevices([]);
+            }}
+            onTouchMove={(e) => e.preventDefault()}
+            onWheel={(e) => e.preventDefault()}
+            style={{ touchAction: 'none' }}
+          >
+            <div
+              className='bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden flex flex-col'
+              onClick={(e) => e.stopPropagation()}
+              onTouchMove={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+              style={{ touchAction: 'auto' }}
+            >
+              <div className='p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between'>
+                <div>
+                  <h3 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
+                    用户设备 - {selectedDeviceUsername}
+                  </h3>
+                  <p className='mt-1 text-sm text-gray-500 dark:text-gray-400'>
+                    查看该用户当前仍有效的登录设备
+                  </p>
+                </div>
+                <button
+                  onClick={() => {
+                    setShowUserDevicesModal(false);
+                    setSelectedDeviceUsername(null);
+                    setUserDevices([]);
+                  }}
+                  className='text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className='flex-1 overflow-y-auto overscroll-contain p-6'>
+                {userDevicesLoading ? (
+                  <div className='space-y-3'>
+                    {[1, 2, 3].map((i) => (
+                      <div
+                        key={i}
+                        className='h-20 bg-gray-200 dark:bg-gray-700 rounded-lg animate-pulse'
+                      />
+                    ))}
+                    <div className='text-center text-sm text-gray-500 dark:text-gray-400'>
+                      加载中...
+                    </div>
+                  </div>
+                ) : userDevices.length === 0 ? (
+                  <div className='text-center py-10'>
+                    <Monitor className='w-12 h-12 mx-auto text-gray-400 dark:text-gray-500 mb-3' />
+                    <p className='text-sm text-gray-500 dark:text-gray-400'>
+                      暂无登录设备
+                    </p>
+                  </div>
+                ) : (
+                  <div className='space-y-3'>
+                    {userDevices
+                      .slice()
+                      .sort((a, b) => b.lastUsed - a.lastUsed)
+                      .map((device) => {
+                        const DeviceIcon = getDeviceIcon(device.deviceInfo);
+                        return (
+                          <div
+                            key={device.tokenId}
+                            className={`p-4 rounded-lg border ${
+                              device.isCurrent
+                                ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-300 dark:border-yellow-700'
+                                : 'bg-gray-50 dark:bg-gray-900/40 border-gray-200 dark:border-gray-700'
+                            }`}
+                          >
+                            <div className='flex items-start gap-3'>
+                              <DeviceIcon className='w-5 h-5 mt-0.5 text-gray-600 dark:text-gray-400 flex-shrink-0' />
+                              <div className='min-w-0 flex-1'>
+                                <div className='flex items-center gap-2'>
+                                  <div className='text-sm font-medium text-gray-900 dark:text-gray-100 break-all'>
+                                    {device.deviceInfo || '未知设备'}
+                                  </div>
+                                  {device.isCurrent && (
+                                    <span className='px-2 py-0.5 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded-full whitespace-nowrap'>
+                                      当前设备
+                                    </span>
+                                  )}
+                                </div>
+                                <div className='mt-2 grid grid-cols-1 sm:grid-cols-2 gap-1 text-xs text-gray-500 dark:text-gray-400'>
+                                  <div>
+                                    登录时间:{' '}
+                                    {new Date(device.createdAt).toLocaleString(
+                                      'zh-CN'
+                                    )}
+                                  </div>
+                                  <div>
+                                    最后活跃:{' '}
+                                    {new Date(device.lastUsed).toLocaleString(
+                                      'zh-CN'
+                                    )}
+                                  </div>
+                                  <div>
+                                    过期时间:{' '}
+                                    {new Date(device.expiresAt).toLocaleString(
+                                      'zh-CN'
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                              {!device.isCurrent && (
+                                <button
+                                  onClick={() =>
+                                    handleRevokeUserDevice(device.tokenId)
+                                  }
+                                  disabled={
+                                    revokingUserDevice === device.tokenId
+                                  }
+                                  className='ml-2 px-3 py-1.5 text-xs font-medium text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 border border-red-200 hover:border-red-300 dark:border-red-800 dark:hover:border-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap'
+                                >
+                                  {revokingUserDevice === device.tokenId
+                                    ? '登出中...'
+                                    : '登出'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              <div className='p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end'>
+                <button
+                  onClick={() => {
+                    setShowUserDevicesModal(false);
+                    setSelectedDeviceUsername(null);
+                    setUserDevices([]);
+                  }}
+                  className={buttonStyles.secondary}
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* 配置用户采集源权限弹窗 */}
       {showConfigureApisModal &&
@@ -6025,6 +6321,8 @@ const VideoSourceConfig = ({
   // 有效性检测相关状态
   const [showValidationModal, setShowValidationModal] = useState(false);
   const [showWeightModal, setShowWeightModal] = useState(false);
+  const [showSpecialSourcesModal, setShowSpecialSourcesModal] = useState(false);
+  const [specialSourceDraftApis, setSpecialSourceDraftApis] = useState<string[]>([]);
   const [weightDraftSources, setWeightDraftSources] = useState<DataSource[]>(
     []
   );
@@ -6156,6 +6454,71 @@ const VideoSourceConfig = ({
     }).catch(() => {
       console.error('操作失败', 'toggle_proxy_mode', key);
     });
+  };
+
+
+  const openSpecialSourcesModal = () => {
+    setSpecialSourceDraftApis(config?.SpecialSourceApis || []);
+    setShowSpecialSourcesModal(true);
+  };
+
+  const closeSpecialSourcesModal = () => {
+    setShowSpecialSourcesModal(false);
+    setSpecialSourceDraftApis([]);
+  };
+
+  const doSaveSpecialSources = async () => {
+    await withLoading('saveSpecialSources', async () => {
+      await callSourceApi({
+        action: 'set_special_sources',
+        keys: specialSourceDraftApis,
+      });
+      closeSpecialSourcesModal();
+    }).catch(() => {
+      console.error('操作失败', 'set_special_sources');
+    });
+  };
+
+  const handleSaveSpecialSources = async () => {
+    const enabledSourceKeys =
+      config?.SourceConfig?.filter((source) => !source.disabled).map(
+        (source) => source.key
+      ) || [];
+    const selectedSet = new Set(specialSourceDraftApis);
+    const selectedAllEnabledSources =
+      enabledSourceKeys.length > 0 &&
+      enabledSourceKeys.every((key) => selectedSet.has(key));
+
+    if (selectedAllEnabledSources) {
+      setConfirmModal({
+        isOpen: true,
+        title: '确认设置特殊源',
+        message:
+          '你已将全部启用的视频源设置为特殊源，未开启特殊源开关的用户可能无法使用搜索。确定要继续保存吗？',
+        onConfirm: async () => {
+          await doSaveSpecialSources();
+          setConfirmModal({
+            isOpen: false,
+            title: '',
+            message: '',
+            onConfirm: () => {},
+            onCancel: () => {},
+          });
+        },
+        onCancel: () => {
+          setConfirmModal({
+            isOpen: false,
+            title: '',
+            message: '',
+            onConfirm: () => {},
+            onCancel: () => {},
+          });
+        },
+      });
+      return;
+    }
+
+    await doSaveSpecialSources();
   };
 
   const handleUpdateWeight = (key: string, weight: number) => {
@@ -6979,6 +7342,19 @@ const VideoSourceConfig = ({
           )}
           <div className='flex items-center gap-2 overflow-x-auto whitespace-nowrap order-1 sm:order-2'>
             <button
+              onClick={openSpecialSourcesModal}
+              className={`${buttonStyles.secondary} flex shrink-0 items-center gap-1.5 whitespace-nowrap`}
+              title='批量选择哪些视频源属于特殊源'
+            >
+              <Settings size={14} />
+              <span>特殊源设置</span>
+              {(config?.SpecialSourceApis?.length || 0) > 0 && (
+                <span className='rounded-full bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 dark:bg-rose-900/30 dark:text-rose-300'>
+                  {config?.SpecialSourceApis?.length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={openWeightModal}
               className={`${buttonStyles.secondary} flex shrink-0 items-center gap-1.5 whitespace-nowrap`}
               title='拖动排序并批量生成推荐权重'
@@ -7127,6 +7503,129 @@ const VideoSourceConfig = ({
           </tbody>
         </table>
       </div>
+
+
+      {showSpecialSourcesModal &&
+        createPortal(
+          <div
+            className='fixed inset-0 z-[10000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm'
+            onClick={closeSpecialSourcesModal}
+          >
+            <div
+              className='flex max-h-[84vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-800'
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className='flex items-start justify-between gap-4 border-b border-gray-200 px-6 py-5 dark:border-gray-700'>
+                <div>
+                  <h3 className='text-xl font-semibold text-gray-900 dark:text-gray-100'>
+                    特殊源设置
+                  </h3>
+                  <p className='mt-1 text-sm text-gray-600 dark:text-gray-400'>
+                    选中的视频源默认对普通搜索隐藏，仅在当前设备访问 /special 开启后参与普通 Web 搜索。
+                  </p>
+                </div>
+                <button
+                  onClick={closeSpecialSourcesModal}
+                  className='text-2xl leading-none text-gray-400 transition-colors hover:text-gray-600 dark:hover:text-gray-300'
+                  aria-label='关闭特殊源设置弹窗'
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className='min-h-0 flex-1 overflow-y-auto px-6 py-5'>
+                <div className='mb-5 rounded-lg border border-rose-200 bg-rose-50 p-4 dark:border-rose-800 dark:bg-rose-900/20'>
+                  <div className='text-sm font-medium text-rose-800 dark:text-rose-300'>
+                    配置说明
+                  </div>
+                  <p className='mt-1 text-sm text-rose-700 dark:text-rose-400'>
+                    这里维护的是特殊源列表，不是用户权限；TVBox、OrionTV、WebTV 始终不会使用这些特殊源。
+                  </p>
+                </div>
+
+                <div className='grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3'>
+                  {config?.SourceConfig?.map((source) => (
+                    <label
+                      key={source.key}
+                      className='flex cursor-pointer items-center space-x-3 rounded-lg border border-gray-200 p-3 transition-colors hover:bg-gray-50 dark:border-gray-700 dark:hover:bg-gray-900/50'
+                    >
+                      <input
+                        type='checkbox'
+                        checked={specialSourceDraftApis.includes(source.key)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSpecialSourceDraftApis((prev) =>
+                              prev.includes(source.key) ? prev : [...prev, source.key]
+                            );
+                          } else {
+                            setSpecialSourceDraftApis((prev) =>
+                              prev.filter((api) => api !== source.key)
+                            );
+                          }
+                        }}
+                        className='rounded border-gray-300 text-rose-600 focus:ring-rose-500 dark:border-gray-600 dark:bg-gray-700'
+                      />
+                      <div className='min-w-0 flex-1'>
+                        <div className='truncate text-sm font-medium text-gray-900 dark:text-gray-100'>
+                          {source.name}
+                        </div>
+                        <div className='truncate text-xs text-gray-500 dark:text-gray-400'>
+                          {source.key}
+                        </div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className='flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 bg-gray-50 px-6 py-4 dark:border-gray-700 dark:bg-gray-900/30'>
+                <div className='flex flex-wrap gap-2'>
+                  <button
+                    onClick={() => setSpecialSourceDraftApis([])}
+                    className={buttonStyles.quickAction}
+                  >
+                    全不选
+                  </button>
+                  <button
+                    onClick={() => {
+                      const allApis =
+                        config?.SourceConfig?.filter((source) => !source.disabled).map(
+                          (source) => source.key
+                        ) || [];
+                      setSpecialSourceDraftApis(allApis);
+                    }}
+                    className={buttonStyles.quickAction}
+                  >
+                    全选启用源
+                  </button>
+                </div>
+                <div className='flex items-center gap-3'>
+                  <span className='text-sm text-gray-600 dark:text-gray-400'>
+                    已选择：
+                    <span className='font-medium text-rose-600 dark:text-rose-400'>
+                      {specialSourceDraftApis.length} 个源
+                    </span>
+                  </span>
+                  <button onClick={closeSpecialSourcesModal} className={buttonStyles.secondary}>
+                    取消
+                  </button>
+                  <button
+                    onClick={handleSaveSpecialSources}
+                    disabled={isLoading('saveSpecialSources')}
+                    className={`px-4 py-2 ${
+                      isLoading('saveSpecialSources')
+                        ? buttonStyles.disabled
+                        : buttonStyles.success
+                    }`}
+                  >
+                    {isLoading('saveSpecialSources') ? '保存中...' : '保存'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {showWeightModal &&
         createPortal(
@@ -7341,7 +7840,7 @@ const VideoSourceConfig = ({
       {confirmModal.isOpen &&
         createPortal(
           <div
-            className='fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4'
+            className='fixed inset-0 bg-black bg-opacity-50 z-[10020] flex items-center justify-center p-4'
             onClick={confirmModal.onCancel}
           >
             <div
@@ -9617,6 +10116,9 @@ const SiteConfigComponent = ({
   const { alertModal, showAlert, hideAlert } = useAlertModal();
   const { isLoading, withLoading } = useLoadingState();
   const [showEnableCommentsModal, setShowEnableCommentsModal] = useState(false);
+  const [bangumiProxyScript, setBangumiProxyScript] = useState('');
+  const [bangumiProxyScriptCopied, setBangumiProxyScriptCopied] =
+    useState(false);
   const [siteSettings, setSiteSettings] = useState<SiteConfig>({
     SiteName: '',
     Announcement: '',
@@ -9722,6 +10224,15 @@ const SiteConfigComponent = ({
         return null;
     }
   };
+
+  useEffect(() => {
+    fetch('/scripts/bangumi-proxy.worker.js')
+      .then((response) => (response.ok ? response.text() : ''))
+      .then(setBangumiProxyScript)
+      .catch((error) => {
+        console.error('加载 Bangumi Workers 脚本失败:', error);
+      });
+  }, []);
 
   useEffect(() => {
     if (config?.SiteConfig) {
@@ -9839,6 +10350,19 @@ const SiteConfigComponent = ({
       EnableComments: true,
     }));
     setShowEnableCommentsModal(false);
+  };
+
+  const handleCopyBangumiProxyScript = async () => {
+    if (!bangumiProxyScript) return;
+    try {
+      await navigator.clipboard.writeText(bangumiProxyScript);
+      setBangumiProxyScriptCopied(true);
+      showSuccess('已复制 Bangumi Workers 脚本', showAlert);
+      setTimeout(() => setBangumiProxyScriptCopied(false), 2000);
+    } catch (error) {
+      console.error('复制 Bangumi Workers 脚本失败:', error);
+      showError('复制失败', showAlert);
+    }
   };
 
   // 保存站点配置
@@ -10623,6 +11147,42 @@ const SiteConfigComponent = ({
               部署环境下不会使用该代理。
             </p>
           </div>
+
+          <details className='group rounded-lg border border-green-200 bg-green-50/60 p-4 dark:border-green-900/50 dark:bg-green-900/10'>
+            <summary className='flex cursor-pointer list-none items-start justify-between gap-3'>
+              <div className='min-w-0'>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300'>
+                  Bangumi Cloudflare Workers 代理脚本
+                </label>
+                <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                  复制后粘贴到 Cloudflare Workers，部署后的域名可填入
+                  Bangumi Base URL 和 Bangumi 图片 Base URL。
+                </p>
+              </div>
+              <div className='flex shrink-0 items-center gap-2'>
+                <button
+                  type='button'
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleCopyBangumiProxyScript();
+                  }}
+                  disabled={!bangumiProxyScript}
+                  className='inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50'
+                >
+                  <Copy className='h-3.5 w-3.5' />
+                  {bangumiProxyScriptCopied ? '已复制' : '复制脚本'}
+                </button>
+                <ChevronDown className='h-4 w-4 text-green-600 transition-transform group-open:rotate-180 dark:text-green-400' />
+              </div>
+            </summary>
+            <pre className='mt-3 max-h-48 overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300'>
+              <code>
+                {bangumiProxyScript ||
+                  '正在加载 /scripts/bangumi-proxy.worker.js ...'}
+              </code>
+            </pre>
+          </details>
         </div>
       </details>
 
@@ -15516,6 +16076,10 @@ const LiveSourceConfig = ({
         <table className='min-w-full divide-y divide-gray-200 dark:divide-gray-700'>
           <thead className='bg-gray-50 dark:bg-gray-900 sticky top-0 z-10'>
             <tr>
+              <th
+                className='px-2 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'
+                aria-label='排序'
+              />
               <th className='px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider'>
                 名称
               </th>

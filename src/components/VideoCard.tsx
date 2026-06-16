@@ -10,6 +10,7 @@ import {
   Radio,
   Sparkles,
   Trash2,
+  Youtube,
 } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
@@ -50,6 +51,8 @@ import DetailPanel from '@/components/DetailPanel';
 import { ImagePlaceholder } from '@/components/ImagePlaceholder';
 import ImageViewer from '@/components/ImageViewer';
 import MobileActionSheet from '@/components/MobileActionSheet';
+import TrailerPickerDialog from '@/components/TrailerPickerDialog';
+import type { TMDBVideoItem } from '@/lib/tmdb.client';
 
 export interface VideoCardProps {
   id?: string;
@@ -170,6 +173,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
     const [showDetailPanel, setShowDetailPanel] = useState(false);
     const [showImageViewer, setShowImageViewer] = useState(false);
     const [showUpcomingInfo, setShowUpcomingInfo] = useState(false); // 控制即将上映倒计时的显示
+    const [showTrailerPicker, setShowTrailerPicker] = useState(false);
+    const [trailerLoading, setTrailerLoading] = useState(false);
+    const [trailerError, setTrailerError] = useState<string | null>(null);
+    const [trailerVideos, setTrailerVideos] = useState<TMDBVideoItem[]>([]);
     const [displayPoster, setDisplayPoster] = useState(processedPoster);
 
     // 检查AI功能是否启用
@@ -664,6 +671,43 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       return configs[from] || configs.search;
     }, [from, isAggregate, douban_id, rate, isUpcoming]);
 
+    const upcomingReleaseText = useMemo(() => {
+      if (!isUpcoming || daysUntilRelease === null) return undefined;
+      if (daysUntilRelease > 0) return `${daysUntilRelease}天后上映`;
+      if (daysUntilRelease === 0) return '今日上映';
+      return '已上映';
+    }, [isUpcoming, daysUntilRelease]);
+
+
+    const openTrailerPicker = useCallback(async () => {
+      if (!actualTitle) return;
+      setShowMobileActions(false);
+      setTrailerError(null);
+      setTrailerLoading(true);
+      setShowTrailerPicker(true);
+
+      try {
+        const params = new URLSearchParams();
+        if (tmdb_id) params.set('id', String(tmdb_id));
+        if (actualSearchType) params.set('type', actualSearchType);
+        if (actualTitle) params.set('title', actualTitle);
+        if (actualYear) params.set('year', actualYear);
+
+        const res = await fetch(`/api/tmdb/videos?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data?.error || '获取预告片失败');
+        }
+
+        setTrailerVideos(data.videos || []);
+      } catch (err) {
+        setTrailerVideos([]);
+        setTrailerError(err instanceof Error ? err.message : '获取预告片失败');
+      } finally {
+        setTrailerLoading(false);
+      }
+    }, [actualSearchType, actualTitle, actualYear, tmdb_id]);
+
     // 移动端操作菜单配置
     const mobileActions = useMemo(() => {
       const actions = [];
@@ -796,6 +840,17 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
         });
       }
 
+      // 预告片操作：仅即将上映卡片显示
+      if (origin !== 'live' && isUpcoming && actualTitle) {
+        actions.push({
+          id: 'trailer',
+          label: '预告片',
+          icon: <Youtube size={20} />,
+          onClick: openTrailerPicker,
+          color: 'default' as const,
+        });
+      }
+
       // 详情页面按钮（直播源不显示详情）
       if (origin !== 'live') {
         actions.push({
@@ -848,6 +903,11 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
       handlePlayInNewTab,
       aiEnabled,
       actualTitle,
+      actualSearchType,
+      isUpcoming,
+      origin,
+      tmdb_id,
+      openTrailerPicker,
     ]);
 
     return (
@@ -1039,7 +1099,6 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
             {/* 播放按钮或上映倒计时 */}
             {isUpcoming && daysUntilRelease !== null ? (
               <div
-                data-button='true'
                 className={`absolute inset-0 flex items-center justify-center transition-all duration-300 ease-in-out ${
                   showUpcomingInfo
                     ? 'opacity-100 scale-100'
@@ -1067,11 +1126,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
                     } as React.CSSProperties
                   }
                 >
-                  {daysUntilRelease > 0
-                    ? `${daysUntilRelease}天后上映`
-                    : daysUntilRelease === 0
-                    ? '今日上映'
-                    : '已上映'}
+                  {upcomingReleaseText}
                 </div>
               </div>
             ) : (
@@ -1963,8 +2018,28 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(
           currentEpisode={currentEpisode}
           totalEpisodes={actualEpisodes}
           origin={origin}
+          description={upcomingReleaseText}
           onPosterClick={() => {
             setShowImageViewer(true);
+          }}
+        />
+
+
+        <TrailerPickerDialog
+          isOpen={showTrailerPicker}
+          title={actualTitle}
+          loading={trailerLoading}
+          error={trailerError}
+          videos={trailerVideos}
+          onClose={() => setShowTrailerPicker(false)}
+          onRetry={openTrailerPicker}
+          onSelect={(video) => {
+            window.open(
+              `https://www.youtube.com/watch?v=${video.key}`,
+              '_blank',
+              'noopener,noreferrer'
+            );
+            setShowTrailerPicker(false);
           }}
         />
 

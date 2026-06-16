@@ -2,7 +2,6 @@
 
 import { AdminConfig } from './admin.types';
 import { MusicPlayRecord } from './db.client';
-import { KvrocksStorage } from './kvrocks.db';
 import { MangaReadRecord, MangaShelfItem } from './manga.types';
 import { BookReadRecord, BookShelfItem } from './book.types';
 import {
@@ -10,7 +9,6 @@ import {
   MusicV2PlaylistItem,
   MusicV2PlaylistRecord,
 } from './music-v2';
-import { RedisStorage } from './redis.db';
 import {
   DanmakuFilterConfig,
   Favorite,
@@ -18,9 +16,10 @@ import {
   PlayRecord,
   SkipConfig,
 } from './types';
-import { UpstashRedisStorage } from './upstash.db';
 
 // storage type 常量: 'localstorage' | 'redis' | 'upstash' | 'kvrocks' | 'd1' | 'postgres'，默认 'localstorage'
+const IS_CLOUDFLARE_BUILD =
+  process.env.CF_PAGES === '1' || process.env.BUILD_TARGET === 'cloudflare';
 const STORAGE_TYPE =
   (process.env.NEXT_PUBLIC_STORAGE_TYPE as
     | 'localstorage'
@@ -35,10 +34,23 @@ const STORAGE_TYPE =
 function createStorage(): IStorage {
   switch (STORAGE_TYPE) {
     case 'redis':
+      if (IS_CLOUDFLARE_BUILD) {
+        throw new Error(
+          'Node Redis storage is not supported in Cloudflare builds. Use D1 or Upstash instead.'
+        );
+      }
+      const { RedisStorage } = require('./redis.db');
       return new RedisStorage();
     case 'upstash':
+      const { UpstashRedisStorage } = require('./upstash.db');
       return new UpstashRedisStorage();
     case 'kvrocks':
+      if (IS_CLOUDFLARE_BUILD) {
+        throw new Error(
+          'Kvrocks storage is not supported in Cloudflare builds. Use D1 or Upstash instead.'
+        );
+      }
+      const { KvrocksStorage } = require('./kvrocks.db');
       return new KvrocksStorage();
     case 'd1':
       // D1Storage 只能在服务端使用，客户端会报错

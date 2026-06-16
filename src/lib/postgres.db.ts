@@ -16,6 +16,7 @@ import {
   DanmakuFilterConfig,
   Notification,
   MovieRequest,
+  PushSubscriptionRecord,
 } from './types';
 import { AdminConfig } from './admin.types';
 import { MangaReadRecord, MangaShelfItem } from './manga.types';
@@ -26,6 +27,7 @@ import {
   MusicV2PlaylistItem,
   MusicV2PlaylistRecord,
 } from './music-v2';
+import { dispatchWebPushNotification } from './web-push';
 
 /**
  * Vercel Postgres 存储实现
@@ -1066,13 +1068,137 @@ export class PostgresStorage implements IStorage {
     }
   }
 
+
+  async upsertPushSubscription(
+    userName: string,
+    subscription: PushSubscriptionRecord
+  ): Promise<void> {
+    try {
+      await this.db
+        .prepare(`
+          INSERT INTO notification_push_subscriptions (
+            id, username, token_id, endpoint, p256dh, auth, user_agent, enabled,
+            created_at, updated_at, last_success_at, last_failure_at, failure_count
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NULL, NULL, 0)
+          ON CONFLICT(endpoint) DO UPDATE SET
+            username = excluded.username,
+            token_id = excluded.token_id,
+            p256dh = excluded.p256dh,
+            auth = excluded.auth,
+            user_agent = excluded.user_agent,
+            enabled = 1,
+            updated_at = excluded.updated_at
+        `)
+        .bind(
+          subscription.id,
+          userName,
+          subscription.tokenId || null,
+          subscription.endpoint,
+          subscription.p256dh,
+          subscription.auth,
+          subscription.userAgent || null,
+          subscription.enabled ? 1 : 0,
+          subscription.createdAt,
+          subscription.updatedAt
+        )
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.upsertPushSubscription error:', err);
+      throw err;
+    }
+  }
+
+  async getEnabledPushSubscriptions(userName: string): Promise<PushSubscriptionRecord[]> {
+    try {
+      const results = await this.db
+        .prepare('SELECT * FROM notification_push_subscriptions WHERE username = $1 AND enabled = 1')
+        .bind(userName)
+        .all();
+
+      return (results.results || []).map((row: any) => ({
+        id: row.id as string,
+        username: row.username as string,
+        tokenId: (row.token_id as string | null) || null,
+        endpoint: row.endpoint as string,
+        p256dh: row.p256dh as string,
+        auth: row.auth as string,
+        userAgent: (row.user_agent as string | null) || null,
+        enabled: row.enabled === 1,
+        createdAt: Number(row.created_at),
+        updatedAt: Number(row.updated_at),
+        lastSuccessAt: row.last_success_at ? Number(row.last_success_at) : null,
+        lastFailureAt: row.last_failure_at ? Number(row.last_failure_at) : null,
+        failureCount: Number(row.failure_count || 0),
+      }));
+    } catch (err) {
+      console.error('PostgresStorage.getEnabledPushSubscriptions error:', err);
+      return [];
+    }
+  }
+
+  async deletePushSubscriptionByEndpoint(userName: string, endpoint: string): Promise<void> {
+    try {
+      await this.db
+        .prepare('DELETE FROM notification_push_subscriptions WHERE username = $1 AND endpoint = $2')
+        .bind(userName, endpoint)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.deletePushSubscriptionByEndpoint error:', err);
+    }
+  }
+
+  async deletePushSubscriptionsByTokenId(userName: string, tokenId: string): Promise<void> {
+    try {
+      await this.db
+        .prepare('DELETE FROM notification_push_subscriptions WHERE username = $1 AND token_id = $2')
+        .bind(userName, tokenId)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.deletePushSubscriptionsByTokenId error:', err);
+    }
+  }
+
+  async deleteAllPushSubscriptions(userName: string): Promise<void> {
+    try {
+      await this.db
+        .prepare('DELETE FROM notification_push_subscriptions WHERE username = $1')
+        .bind(userName)
+        .run();
+    } catch (err) {
+      console.error('PostgresStorage.deleteAllPushSubscriptions error:', err);
+    }
+  }
+
+  async updatePushSubscriptionDeliveryStats(
+    userName: string,
+    endpoint: string,
+    success: boolean
+  ): Promise<void> {
+    try {
+      const now = Date.now();
+      if (success) {
+        await this.db
+          .prepare('UPDATE notification_push_subscriptions SET last_success_at = $1, failure_count = 0, updated_at = $2 WHERE username = $3 AND endpoint = $4')
+          .bind(now, now, userName, endpoint)
+          .run();
+      } else {
+        await this.db
+          .prepare('UPDATE notification_push_subscriptions SET last_failure_at = $1, failure_count = failure_count + 1, updated_at = $2 WHERE username = $3 AND endpoint = $4')
+          .bind(now, now, userName, endpoint)
+          .run();
+      }
+    } catch (err) {
+      console.error('PostgresStorage.updatePushSubscriptionDeliveryStats error:', err);
+    }
+  }
+
   // ==================== TVBox订阅token ====================
 
   async getTvboxSubscribeToken(userName: string): Promise<string | null> {
     try {
       const result = await this.db
         .prepare(
-          'SELECT tvbox_subscribe_token FROM users_v2 WHERE username = $1'
+          'SELECT tvbox_subscribe_token FROM users WHERE username = $1'
         )
         .bind(userName)
         .first();
@@ -1088,7 +1214,7 @@ export class PostgresStorage implements IStorage {
     try {
       await this.db
         .prepare(
-          'UPDATE users_v2 SET tvbox_subscribe_token = $1 WHERE username = $2'
+          'UPDATE users SET tvbox_subscribe_token = $1 WHERE username = $2'
         )
         .bind(token, userName)
         .run();
@@ -1106,7 +1232,7 @@ export class PostgresStorage implements IStorage {
     try {
       const result = await this.db
         .prepare(
-          'SELECT username FROM users_v2 WHERE tvbox_subscribe_token = $1'
+          'SELECT username FROM users WHERE tvbox_subscribe_token = $1'
         )
         .bind(token)
         .first();
@@ -2937,6 +3063,8 @@ export class PostgresStorage implements IStorage {
           notification.metadata ? JSON.stringify(notification.metadata) : null
         )
         .run();
+
+      await dispatchWebPushNotification(this, userName, notification);
     } catch (err) {
       console.error('PostgresStorage.addNotification error:', err);
       throw err;
@@ -3044,7 +3172,7 @@ export class PostgresStorage implements IStorage {
             requested_by, request_count, status, created_at, updated_at,
             fulfilled_at, fulfilled_source, fulfilled_id
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
         `
         )
         .bind(

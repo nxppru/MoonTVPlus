@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 
 const { PHASE_DEVELOPMENT_SERVER } = require('next/constants');
-const webpack = require('webpack');
+const path = require('path');
 
 // 检测是否为 Cloudflare Pages 构建
 const isCloudflare = process.env.CF_PAGES === '1' || process.env.BUILD_TARGET === 'cloudflare';
@@ -17,45 +17,8 @@ const optimizedPackageImports = [
   'react-icons',
 ];
 
-const serverExternalPackages = [
-  '@upstash/redis',
-  // @upstash/redis depends on uncrypto, whose package exports include a
-  // workerd condition. OpenNext needs it traced as a full external package,
-  // otherwise .open-next may contain package.json without dist/crypto.web.mjs.
-  'uncrypto',
-  '@vercel/postgres',
-  'better-sqlite3',
-  'cheerio',
-  'nodemailer',
-  'pg',
-  'redis',
-  'socket.io',
-  'xml2js',
-  'xpath',
-];
-
-// 仅在开发环境或 Cloudflare 环境下排除 6b85c446 和 706b2fe 引入的 external 包；
-// 其它未来加入的 server external 包不受影响。
-const buildExcludedServerExternalPackages = [
-  '@upstash/redis',
-  'uncrypto',
-  '@vercel/postgres',
-  'better-sqlite3',
-  'cheerio',
-  'nodemailer',
-  'pg',
-  'redis',
-  'socket.io',
-  'xml2js',
-  'xpath',
-];
-
 const createNextConfig = (phase) => {
   const isDevelopment = phase === PHASE_DEVELOPMENT_SERVER || process.env.NODE_ENV === 'development';
-  const effectiveServerExternalPackages =
-    isDevelopment || isCloudflare
-      ? serverExternalPackages.filter((pkg) => !buildExcludedServerExternalPackages.includes(pkg))
-      : serverExternalPackages;
 
   const nextConfig = {
   // Cloudflare Pages 不支持 standalone，使用默认输出
@@ -72,9 +35,6 @@ const createNextConfig = (phase) => {
   experimental: {
     instrumentationHook: process.env.NODE_ENV === 'production' && !isCloudflare,
     optimizePackageImports: optimizedPackageImports,
-    ...(effectiveServerExternalPackages.length
-      ? { serverComponentsExternalPackages: effectiveServerExternalPackages }
-      : {}),
     webpackBuildWorker: !isCloudflare,
   },
 
@@ -131,14 +91,35 @@ const createNextConfig = (phase) => {
 
     // Cloudflare 使用 D1，不需要把 better-sqlite3 原生模块带入 Worker 产物。
     if (isCloudflare) {
-      config.plugins.push(
-        new webpack.IgnorePlugin({
-          resourceRegExp: /^better-sqlite3$/,
-        })
-      );
       config.resolve.alias = {
         ...config.resolve.alias,
-        'better-sqlite3': false,
+        ...Object.fromEntries(
+          [
+            'better-sqlite3',
+            'sharp',
+            'nodemailer',
+            'socket.io',
+            'redis',
+            '@vercel/postgres',
+            'pg',
+          ].map((pkg) => [
+            pkg,
+            path.resolve(
+              __dirname,
+              'src/lib/cloudflare-shims/node-unsupported.ts'
+            ),
+          ])
+        ),
+        // Cloudflare Workers 有原生 fetch；代理 Agent 在 Workers 中不可用。
+        // 用轻量 shim 替换 node-fetch / https-proxy-agent，避免把 Node HTTP 栈打入 Worker。
+        'node-fetch': path.resolve(
+          __dirname,
+          'src/lib/cloudflare-shims/node-fetch.ts'
+        ),
+        'https-proxy-agent': path.resolve(
+          __dirname,
+          'src/lib/cloudflare-shims/https-proxy-agent.ts'
+        ),
       };
       config.externals = (config.externals || []).filter((external) => {
         return !(
@@ -183,6 +164,7 @@ const createNextConfig = (phase) => {
     dest: 'public',
     register: true,
     skipWaiting: true,
+    importScripts: ['/push-sw.js'],
   });
 
   return withPWA(nextConfig);

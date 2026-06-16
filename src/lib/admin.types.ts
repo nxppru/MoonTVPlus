@@ -85,6 +85,7 @@ export interface AdminConfig {
       permissions?: string[];
     }[];
   };
+  SpecialSourceApis?: string[]; // 特殊源 key 列表，默认对普通入口隐藏
   SourceConfig: {
     key: string;
     name: string;

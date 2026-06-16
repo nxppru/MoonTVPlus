@@ -7,6 +7,7 @@ import {
   Check,
   ChevronDown,
   ChevronUp,
+  CircleHelp,
   Copy,
   Download,
   ExternalLink,
@@ -175,6 +176,9 @@ export const UserMenu: React.FC = () => {
     useState('server-proxy');
   const [animeCustomBaseUrl, setAnimeCustomBaseUrl] = useState('');
   const [animeImageBaseUrl, setAnimeImageBaseUrl] = useState('');
+  const [bangumiProxyScript, setBangumiProxyScript] = useState('');
+  const [bangumiProxyScriptCopied, setBangumiProxyScriptCopied] =
+    useState(false);
   const [doubanImageProxyType, setDoubanImageProxyType] = useState(
     'cmliussss-cdn-tencent'
   );
@@ -208,14 +212,19 @@ export const UserMenu: React.FC = () => {
   const [exactSearch, setExactSearch] = useState(true);
   const [maxConcurrentDownloads, setMaxConcurrentDownloads] = useState(6);
   const [downloadThreadsPerTask, setDownloadThreadsPerTask] = useState(6);
+  const [downloadSegmentTimeout, setDownloadSegmentTimeout] = useState(30000);
   const [downloadMode, setDownloadMode] = useState<'browser' | 'filesystem'>(
     'browser'
   );
   const [filesystemSavePath, setFilesystemSavePath] = useState<string>('');
 
-  // 邮件通知设置
+  // 通知设置
   const [userEmail, setUserEmail] = useState('');
   const [emailNotifications, setEmailNotifications] = useState(false);
+  const [pushNotifications, setPushNotifications] = useState(false);
+  const [pushNotificationsConfigured, setPushNotificationsConfigured] = useState(false);
+  const [pushNotificationsSupported, setPushNotificationsSupported] = useState(false);
+  const [pushNotificationsBusy, setPushNotificationsBusy] = useState(false);
   const [emailSettingsLoading, setEmailSettingsLoading] = useState(false);
   const [emailSettingsSaving, setEmailSettingsSaving] = useState(false);
   const [emailSettingsMessage, setEmailSettingsMessage] = useState('');
@@ -634,6 +643,13 @@ export const UserMenu: React.FC = () => {
       const savedAnimeImageBaseUrl = localStorage.getItem('animeImageBaseUrl');
       setAnimeImageBaseUrl(savedAnimeImageBaseUrl || '');
 
+      fetch('/scripts/bangumi-proxy.worker.js')
+        .then((response) => (response.ok ? response.text() : ''))
+        .then(setBangumiProxyScript)
+        .catch((error) => {
+          console.error('加载 Bangumi Workers 脚本失败:', error);
+        });
+
       const savedDoubanImageProxyType = localStorage.getItem(
         'doubanImageProxyType'
       );
@@ -820,6 +836,17 @@ export const UserMenu: React.FC = () => {
         setDownloadThreadsPerTask(Number(savedDownloadThreadsPerTask));
       }
 
+      // 加载分片下载超时设置
+      const savedDownloadSegmentTimeout = localStorage.getItem(
+        'downloadSegmentTimeout'
+      );
+      if (savedDownloadSegmentTimeout !== null) {
+        const timeout = Number(savedDownloadSegmentTimeout);
+        if (Number.isFinite(timeout)) {
+          setDownloadSegmentTimeout(Math.min(Math.max(timeout, 30000), 300000));
+        }
+      }
+
       // 加载下载模式设置
       const savedDownloadMode = localStorage.getItem('downloadMode');
       if (
@@ -838,7 +865,7 @@ export const UserMenu: React.FC = () => {
     }
   }, []);
 
-  // 加载邮件通知设置
+  // 加载通知设置
   const loadEmailSettings = async () => {
     setEmailSettingsLoading(true);
     setEmailSettingsMessage('');
@@ -850,14 +877,206 @@ export const UserMenu: React.FC = () => {
         setUserEmail(data.email || '');
         setEmailNotifications(data.emailNotifications || false);
       }
+
+      const pushResponse = await fetch('/api/notifications/push');
+      if (pushResponse.ok) {
+        const pushData = await pushResponse.json();
+        setPushNotificationsConfigured(Boolean(pushData.configured && pushData.publicKey));
+        setPushNotificationsSupported(
+          Boolean(
+            pushData.configured &&
+            pushData.publicKey &&
+            pushData.hasDeviceToken &&
+            typeof window !== 'undefined' &&
+            'Notification' in window &&
+            'serviceWorker' in navigator &&
+            'PushManager' in window
+          )
+        );
+        setPushNotifications(Boolean(pushData.pushNotifications));
+      }
     } catch (error) {
-      console.error('加载邮件设置失败:', error);
+      console.error('加载通知设置失败:', error);
     } finally {
       setEmailSettingsLoading(false);
     }
   };
 
-  // 保存邮件通知设置
+  const urlBase64ToUint8Array = (base64String: string) => {
+    const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding)
+      .replace(/-/g, '+')
+      .replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; i++) {
+      outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+  };
+
+  const arrayBufferToBase64Url = (buffer: ArrayBuffer | null) => {
+    if (!buffer) return '';
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    return window
+      .btoa(binary)
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+  };
+
+  const isSubscriptionUsingPublicKey = (
+    subscription: PushSubscription,
+    publicKey: string
+  ) => {
+    const subscriptionKey = arrayBufferToBase64Url(
+      subscription.options?.applicationServerKey || null
+    );
+    return subscriptionKey === publicKey;
+  };
+
+  const waitForServiceWorkerActivation = async (
+    registration: ServiceWorkerRegistration
+  ) => {
+    let pendingWorker = registration.installing || registration.waiting;
+
+    if (!pendingWorker) {
+      await registration.update();
+      pendingWorker = registration.installing || registration.waiting;
+    }
+
+    // 没有新的 installing/waiting worker 时，说明当前 active registration 可直接使用。
+    if (!pendingWorker) {
+      if (registration.active) return registration;
+      throw new Error('Service Worker 注册失败，请刷新页面后重试');
+    }
+
+    const activatingWorker = pendingWorker;
+    if (activatingWorker.state === 'activated') return registration;
+
+    await new Promise<void>((resolve, reject) => {
+      const handleStateChange = () => {
+        if (activatingWorker.state === 'activated') {
+          activatingWorker.removeEventListener('statechange', handleStateChange);
+          resolve();
+        } else if (activatingWorker.state === 'redundant') {
+          activatingWorker.removeEventListener('statechange', handleStateChange);
+          reject(new Error('Service Worker 激活失败，请刷新页面后重试'));
+        }
+      };
+
+      activatingWorker.addEventListener('statechange', handleStateChange);
+      handleStateChange();
+    });
+
+    return registration;
+  };
+
+  const getReadyServiceWorkerRegistration = async () => {
+    if (!('serviceWorker' in navigator)) {
+      throw new Error('当前浏览器不支持 Service Worker');
+    }
+
+    // 开启系统通知时明确使用带 push 事件处理器的 Service Worker。
+    // 如果浏览器里已有旧 /sw.js 注册，重新注册同一 scope 的 /push-sw.js 会更新该注册；
+    // push-sw.js 内部会 skipWaiting + clients.claim，激活后再订阅，确保 Push 到达能展示通知。
+    const registration = await navigator.serviceWorker.register('/push-sw.js', {
+      scope: '/',
+      updateViaCache: 'none',
+    });
+
+    return waitForServiceWorkerActivation(registration);
+  };
+
+  const handlePushNotificationsChange = async (enabled: boolean) => {
+    if (!enabled) {
+      setPushNotificationsBusy(true);
+      try {
+        const registration =
+          'serviceWorker' in navigator
+            ? await navigator.serviceWorker.getRegistration()
+            : undefined;
+        const subscription = await registration?.pushManager.getSubscription();
+        const endpoint = subscription?.endpoint;
+        await subscription?.unsubscribe();
+        await fetch('/api/notifications/push', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ endpoint }),
+        });
+        setPushNotifications(false);
+      } catch (error) {
+        console.error('关闭浏览器通知失败:', error);
+        setEmailSettingsMessage('关闭浏览器通知失败，请重试');
+        setEmailSettingsMessageType('error');
+      } finally {
+        setPushNotificationsBusy(false);
+      }
+      return;
+    }
+
+    setPushNotificationsBusy(true);
+    setEmailSettingsMessage('');
+    setEmailSettingsMessageType(null);
+    try {
+      const statusResponse = await fetch('/api/notifications/push');
+      const status = statusResponse.ok ? await statusResponse.json() : null;
+      if (!status?.configured || !status?.publicKey) {
+        throw new Error('管理员尚未配置 Web Push VAPID 密钥');
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') {
+        throw new Error('浏览器通知权限未授权');
+      }
+
+      const registration = await getReadyServiceWorkerRegistration();
+
+      let subscription = await registration.pushManager.getSubscription();
+      if (subscription && !isSubscriptionUsingPublicKey(subscription, status.publicKey)) {
+        await subscription.unsubscribe();
+        subscription = null;
+      }
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(status.publicKey),
+        });
+      }
+
+      const response = await fetch('/api/notifications/push', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: true,
+          subscription: subscription.toJSON(),
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || '保存浏览器通知订阅失败');
+      }
+
+      setPushNotifications(true);
+      setEmailSettingsMessage('浏览器系统通知已开启');
+      setEmailSettingsMessageType('success');
+    } catch (error) {
+      console.error('开启浏览器通知失败:', error);
+      setPushNotifications(false);
+      setEmailSettingsMessage(error instanceof Error ? error.message : '开启浏览器通知失败');
+      setEmailSettingsMessageType('error');
+    } finally {
+      setPushNotificationsBusy(false);
+    }
+  };
+
+  // 保存通知设置
   const handleSaveEmailSettings = async () => {
     setEmailSettingsSaving(true);
     setEmailSettingsMessage('');
@@ -885,7 +1104,7 @@ export const UserMenu: React.FC = () => {
         setEmailSettingsMessageType('error');
       }
     } catch (error) {
-      console.error('保存邮件设置失败:', error);
+      console.error('保存通知设置失败:', error);
       setEmailSettingsMessage('保存失败，请重试');
       setEmailSettingsMessageType('error');
     } finally {
@@ -926,8 +1145,10 @@ export const UserMenu: React.FC = () => {
           });
 
           if (response.ok) {
-            // 重新加载设备列表
-            await loadDevices();
+            // 撤销成功后不重新加载列表，仅移除当前撤销的设备项
+            setDevices((prevDevices) =>
+              prevDevices.filter((device) => device.tokenId !== tokenId)
+            );
           } else {
             alert('撤销失败，请重试');
           }
@@ -1392,6 +1613,24 @@ export const UserMenu: React.FC = () => {
     }
   };
 
+  const handleDownloadSegmentTimeoutChange = (value: number) => {
+    const normalizedValue = Math.min(Math.max(value, 30000), 300000);
+    setDownloadSegmentTimeout(normalizedValue);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('downloadSegmentTimeout', String(normalizedValue));
+    }
+  };
+
+  const formatDownloadSegmentTimeout = (value: number) => {
+    if (value < 60000) {
+      return `${Math.round(value / 1000)}秒`;
+    }
+
+    const minutes = Math.floor(value / 60000);
+    const seconds = Math.round((value % 60000) / 1000);
+    return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分钟`;
+  };
+
   const handleDownloadModeChange = (mode: 'browser' | 'filesystem') => {
     // 如果选择 filesystem 模式，先检测浏览器是否支持
     if (
@@ -1556,6 +1795,17 @@ export const UserMenu: React.FC = () => {
     setAnimeImageBaseUrl(value);
     if (typeof window !== 'undefined') {
       localStorage.setItem('animeImageBaseUrl', value);
+    }
+  };
+
+  const handleCopyBangumiProxyScript = async () => {
+    if (!bangumiProxyScript) return;
+    try {
+      await navigator.clipboard.writeText(bangumiProxyScript);
+      setBangumiProxyScriptCopied(true);
+      setTimeout(() => setBangumiProxyScriptCopied(false), 2000);
+    } catch (error) {
+      console.error('复制 Bangumi Workers 脚本失败:', error);
     }
   };
 
@@ -2801,6 +3051,41 @@ export const UserMenu: React.FC = () => {
                         图片域名。只需填写基础部分，不需要填写完整图片路径。
                       </p>
                     </div>
+
+                    <details className='group rounded-lg border border-green-200 bg-green-50/60 p-3 dark:border-green-900/50 dark:bg-green-900/10'>
+                      <summary className='flex cursor-pointer list-none items-center justify-between gap-2'>
+                        <div className='min-w-0'>
+                          <label className='text-xs font-medium text-gray-700 dark:text-gray-300'>
+                            Bangumi Cloudflare Workers 代理脚本
+                          </label>
+                          <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+                            复制后粘贴到 Cloudflare Workers，部署地址可填入上方
+                            Base URL。
+                          </p>
+                        </div>
+                        <div className='flex shrink-0 items-center gap-2'>
+                          <button
+                            type='button'
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleCopyBangumiProxyScript();
+                            }}
+                            disabled={!bangumiProxyScript}
+                            className='inline-flex items-center gap-1.5 rounded-lg bg-green-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50'
+                          >
+                            <Copy className='h-3.5 w-3.5' />
+                            {bangumiProxyScriptCopied ? '已复制' : '复制脚本'}
+                          </button>
+                          <ChevronDown className='h-4 w-4 text-green-600 transition-transform group-open:rotate-180 dark:text-green-400' />
+                        </div>
+                      </summary>
+                      <pre className='mt-3 max-h-40 overflow-auto rounded-lg border border-gray-200 bg-white p-3 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-950 dark:text-gray-300'>
+                        <code>
+                          {bangumiProxyScript || '正在加载 /scripts/bangumi-proxy.worker.js ...'}
+                        </code>
+                      </pre>
+                    </details>
                   </div>
                 </div>
               )}
@@ -2882,8 +3167,20 @@ export const UserMenu: React.FC = () => {
                     <div className='ml-4 mt-2 space-y-2'>
                       <div className='space-y-2'>
                         <div className='flex items-center justify-between gap-3'>
-                          <span className='text-xs text-gray-600 dark:text-gray-400'>
+                          <span className='flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400'>
                             优选策略
+                            <button
+                              type='button'
+                              className='group relative inline-flex h-4 w-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-gray-600 focus:outline-none focus:ring-2 focus:ring-green-500/50 dark:text-gray-500 dark:hover:text-gray-300'
+                              aria-label='优选策略说明'
+                            >
+                              <CircleHelp className='h-3.5 w-3.5' />
+                              <span className='pointer-events-none absolute left-1/2 top-full z-50 mt-2 hidden w-56 -translate-x-1/2 rounded-lg bg-gray-900 px-3 py-2 text-left text-xs leading-relaxed text-white shadow-lg group-hover:block group-focus:block dark:bg-gray-700'>
+                                快速策略：快速优选高权重播放源
+                                <br />
+                                全量策略：全量优选全部源
+                              </span>
+                            </button>
                           </span>
                           <div className='inline-flex rounded-lg border border-gray-200 bg-gray-100 p-1 dark:border-gray-700 dark:bg-gray-800'>
                             <button
@@ -3267,6 +3564,80 @@ export const UserMenu: React.FC = () => {
                         }`}
                       >
                         32个
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 分片下载超时 */}
+                  <div className='space-y-2'>
+                    <div>
+                      <h4 className='text-sm font-medium text-gray-700 dark:text-gray-300'>
+                        分片下载超时
+                      </h4>
+                      <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                        单个分片超过该时间仍未完成时会自动判定超时并按原分片重试
+                      </p>
+                    </div>
+                    <div className='flex items-center justify-between'>
+                      <span className='text-xs text-gray-600 dark:text-gray-400'>
+                        超时时间
+                      </span>
+                      <span className='text-xs font-medium text-gray-700 dark:text-gray-300'>
+                        {formatDownloadSegmentTimeout(downloadSegmentTimeout)}
+                      </span>
+                    </div>
+                    <div className='flex items-center gap-2'>
+                      <input
+                        type='range'
+                        min='30000'
+                        max='300000'
+                        step='10000'
+                        value={downloadSegmentTimeout}
+                        onChange={(e) =>
+                          handleDownloadSegmentTimeoutChange(
+                            Number(e.target.value)
+                          )
+                        }
+                        className='flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer dark:bg-gray-700'
+                        style={{
+                          background: `linear-gradient(to right, #10b981 0%, #10b981 ${
+                            ((downloadSegmentTimeout - 30000) / (300000 - 30000)) * 100
+                          }%, #e5e7eb ${
+                            ((downloadSegmentTimeout - 30000) / (300000 - 30000)) * 100
+                          }%, #e5e7eb 100%)`,
+                        }}
+                      />
+                    </div>
+                    <div className='flex justify-between text-xs text-gray-500 dark:text-gray-400'>
+                      <button
+                        onClick={() => handleDownloadSegmentTimeoutChange(30000)}
+                        className={`px-2 py-0.5 rounded cursor-pointer ${
+                          downloadSegmentTimeout === 30000
+                            ? 'bg-green-500 text-white'
+                            : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        30秒
+                      </button>
+                      <button
+                        onClick={() => handleDownloadSegmentTimeoutChange(120000)}
+                        className={`px-2 py-0.5 rounded cursor-pointer ${
+                          downloadSegmentTimeout === 120000
+                            ? 'bg-green-500 text-white'
+                            : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        2分钟
+                      </button>
+                      <button
+                        onClick={() => handleDownloadSegmentTimeoutChange(300000)}
+                        className={`px-2 py-0.5 rounded cursor-pointer ${
+                          downloadSegmentTimeout === 300000
+                            ? 'bg-green-500 text-white'
+                            : 'hover:bg-gray-200 dark:hover:bg-gray-700'
+                        }`}
+                      >
+                        5分钟
                       </button>
                     </div>
                   </div>
@@ -4828,6 +5199,11 @@ export const UserMenu: React.FC = () => {
         createPortal(
           <NotificationPanel
             isOpen={isNotificationPanelOpen}
+            onOpenNotificationSettings={() => {
+              setIsNotificationPanelOpen(false);
+              setIsEmailSettingsOpen(true);
+              void loadEmailSettings();
+            }}
             onClose={() => {
               setIsNotificationPanelOpen(false);
               // 不需要在这里刷新，NotificationPanel 内部会触发事件
@@ -4866,6 +5242,11 @@ export const UserMenu: React.FC = () => {
         onUserEmailChange={setUserEmail}
         emailNotifications={emailNotifications}
         onEmailNotificationsChange={setEmailNotifications}
+        pushNotifications={pushNotifications}
+        onPushNotificationsChange={handlePushNotificationsChange}
+        pushNotificationsSupported={pushNotificationsSupported}
+        pushNotificationsConfigured={pushNotificationsConfigured}
+        pushNotificationsBusy={pushNotificationsBusy}
         emailSettingsLoading={emailSettingsLoading}
         emailSettingsSaving={emailSettingsSaving}
         onSave={handleSaveEmailSettings}

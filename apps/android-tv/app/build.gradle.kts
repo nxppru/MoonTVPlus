@@ -13,6 +13,7 @@ val appDisplayName = propOrEnv("APP_NAME", "APP_NAME", "MoonTVPlus TV")
 val versionNameValue = propOrEnv("VERSION_NAME", "VERSION_NAME", "1.0.0")
 val versionCodeValue = propOrEnv("VERSION_CODE", "VERSION_CODE", "1").toIntOrNull() ?: 1
 val minSdkValue = propOrEnv("MIN_SDK", "MIN_SDK", "23").toIntOrNull() ?: 23
+val geckoViewVersion = propOrEnv("GECKOVIEW_VERSION", "GECKOVIEW_VERSION", "126.0.20240526221752")
 
 fun escapeJavaString(value: String): String = value
     .replace("\\", "\\\\")
@@ -44,6 +45,27 @@ android {
         buildConfig = true
     }
 
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+
+    flavorDimensions += "engine"
+
+    productFlavors {
+        create("webview") {
+            dimension = "engine"
+            buildConfigField("String", "ENGINE_NAME", "\"WebView\"")
+            resValue("string", "engine_name", "WebView")
+        }
+        create("gecko") {
+            dimension = "engine"
+            applicationIdSuffix = ".gecko"
+            buildConfigField("String", "ENGINE_NAME", "\"GeckoView\"")
+            resValue("string", "engine_name", "GeckoView")
+        }
+    }
+
     signingConfigs {
         create("release") {
             val storeFilePath = System.getenv("ANDROID_KEYSTORE_PATH")
@@ -68,4 +90,8 @@ android {
             }
         }
     }
+}
+
+dependencies {
+    add("geckoImplementation", "org.mozilla.geckoview:geckoview:$geckoViewVersion")
 }

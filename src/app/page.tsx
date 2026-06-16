@@ -852,6 +852,7 @@ function HomeClient() {
                     }
                     type={item.media_type === 'tv' ? 'tv' : 'movie'}
                     from='douban'
+                    tmdb_id={item.id}
                     releaseDate={item.release_date}
                     isUpcoming={true}
                   />

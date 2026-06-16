@@ -51,11 +51,17 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0(@webgpu/types@0.1.68)
       artplayer:
-        specifier: ^5.3.0
-        version: 5.3.0
+        specifier: ^5.4.0
+        version: 5.4.0
+      artplayer-plugin-auto-thumbnail:
+        specifier: ^1.1.0
+        version: 1.1.0
       artplayer-plugin-danmuku:
         specifier: ^5.2.0
         version: 5.2.0
+      artplayer-plugin-jassub:
+        specifier: 1.1.0
+        version: 1.1.0
       better-sqlite3:
         specifier: ^12.6.2
         version: 12.6.2
@@ -3793,11 +3799,17 @@ packages:
     resolution: {integrity: sha512-3duEwti880xqi4eAMN8AyR4a0ByT90zoYdLlevfrvU43vb0YZwZVfxOgxWrLXXXpyugL0hNZc9G6BiB5B3nUug==}
     engines: {node: '>=8'}
 
+  artplayer-plugin-auto-thumbnail@1.1.0:
+    resolution: {integrity: sha512-ALrcLv+qEDime+R8p4628RZTfMGlrpX6d7PLIQaYWsQEN3lPzVjcVcARCFpqnFI8gvRdqt21w72sJphf50xtVw==}
+
   artplayer-plugin-danmuku@5.2.0:
     resolution: {integrity: sha512-iHHSGEc0J+gl7imX4nmLqqC7LXmv8xeGf2lUevhhyUCoiCRZplecpKQICHjErVb1Yqyp1xCy6Sp8eYN+EpFWFw==}
 
-  artplayer@5.3.0:
-    resolution: {integrity: sha512-yExO39MpEg4P+bxgChxx1eJfiUPE4q1QQRLCmqGhlsj+ANuaoEkR8hF93LdI5ZyrAcIbJkuEndxEiUoKobifDw==}
+  artplayer-plugin-jassub@1.1.0:
+    resolution: {integrity: sha512-vQwEtZMmkwr5utbxfUAeE/gRccl2nfcz+SYP2Subn/L8cVIFdMXWMgicm7ZkPVtAoBbCav7p0yP4pwXkCKMzAg==}
+
+  artplayer@5.4.0:
+    resolution: {integrity: sha512-2B+plbx8N2yNsjK4nJU3+EOG8TULm1LRZk/QPkWRAMEX2Ee/MSnZG/WJYz8kcoZxZuLKcQ3uXifqLuPxZOH29A==}
 
   assert@2.1.0:
     resolution: {integrity: sha512-eLHpSK/Y4nhMJ07gDaAzoX/XAKS8PSaojml3M0DM4JpV1LAi5JOJ/p6H/XWrl8L+DzVEvVCW1z3vWAaB9oTsQw==}
@@ -13323,9 +13335,13 @@ snapshots:
 
   arrify@2.0.1: {}
 
+  artplayer-plugin-auto-thumbnail@1.1.0: {}
+
   artplayer-plugin-danmuku@5.2.0: {}
 
-  artplayer@5.3.0:
+  artplayer-plugin-jassub@1.1.0: {}
+
+  artplayer@5.4.0:
     dependencies:
       option-validator: 2.0.6
 

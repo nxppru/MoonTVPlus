@@ -17,6 +17,7 @@ import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import { getBangumiSubject } from '@/lib/bangumi.client';
+import { appendSpecialSourceParam } from '@/lib/special-source.client';
 import { getTMDBImageUrl } from '@/lib/tmdb.client';
 import { processImageUrl } from '@/lib/utils';
 
@@ -408,11 +409,11 @@ const DetailPanel: React.FC<DetailPanelProps> = ({
           if (sourceId && source) {
             try {
               const response = await fetch(
-                `/api/source-detail?id=${encodeURIComponent(
+                appendSpecialSourceParam(`/api/source-detail?id=${encodeURIComponent(
                   sourceId
                 )}&source=${encodeURIComponent(
                   source
-                )}&title=${encodeURIComponent(title)}`
+                )}&title=${encodeURIComponent(title)}`)
               );
               if (response.ok) {
                 const data = await response.json();
