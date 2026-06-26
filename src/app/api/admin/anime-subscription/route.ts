@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 验证 source
-    if (!['acgrip', 'mikan', 'dmhy'].includes(source)) {
+    if (!['acgrip', 'mikan', 'dmhy', 'nyaa'].includes(source)) {
       return NextResponse.json({ error: '无效的搜索源' }, { status: 400 });
     }
 

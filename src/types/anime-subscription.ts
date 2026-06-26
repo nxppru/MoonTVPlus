@@ -2,7 +2,7 @@ export interface AnimeSubscription {
   id: string;
   title: string;
   filterText: string;
-  source: 'acgrip' | 'mikan' | 'dmhy';
+  source: 'acgrip' | 'mikan' | 'dmhy' | 'nyaa';
   enabled: boolean;
   lastCheckTime: number;
   lastEpisode: number;

@@ -4,8 +4,10 @@
 const { PHASE_DEVELOPMENT_SERVER } = require('next/constants');
 const path = require('path');
 
-// 检测是否为 Cloudflare Pages 构建
+// 检测是否为边缘平台构建
 const isCloudflare = process.env.CF_PAGES === '1' || process.env.BUILD_TARGET === 'cloudflare';
+const isEdgeOne = process.env.EDGEONE_PAGES === '1' || process.env.BUILD_TARGET === 'edgeone';
+const isEdgeBuild = isCloudflare || isEdgeOne;
 
 const optimizedPackageImports = [
   '@dnd-kit/core',
@@ -22,7 +24,7 @@ const createNextConfig = (phase) => {
 
   const nextConfig = {
   // Cloudflare Pages 不支持 standalone，使用默认输出
-  output: isCloudflare ? undefined : 'standalone',
+  output: isEdgeBuild ? undefined : 'standalone',
   eslint: {
     dirs: ['src'],
     // 在生产构建时忽略 ESLint 错误
@@ -33,9 +35,9 @@ const createNextConfig = (phase) => {
   swcMinify: true,
 
   experimental: {
-    instrumentationHook: process.env.NODE_ENV === 'production' && !isCloudflare,
+    instrumentationHook: process.env.NODE_ENV === 'production' && !isEdgeBuild,
     optimizePackageImports: optimizedPackageImports,
-    webpackBuildWorker: !isCloudflare,
+    webpackBuildWorker: !isEdgeBuild,
   },
 
   // Uncoment to add domain whitelist
@@ -90,7 +92,7 @@ const createNextConfig = (phase) => {
     };
 
     // Cloudflare 使用 D1，不需要把 better-sqlite3 原生模块带入 Worker 产物。
-    if (isCloudflare) {
+    if (isEdgeBuild) {
       config.resolve.alias = {
         ...config.resolve.alias,
         ...Object.fromEntries(
@@ -116,10 +118,14 @@ const createNextConfig = (phase) => {
           __dirname,
           'src/lib/cloudflare-shims/node-fetch.ts'
         ),
-        'https-proxy-agent': path.resolve(
-          __dirname,
-          'src/lib/cloudflare-shims/https-proxy-agent.ts'
-        ),
+        ...(isCloudflare
+          ? {
+              'https-proxy-agent': path.resolve(
+                __dirname,
+                'src/lib/cloudflare-shims/https-proxy-agent.ts'
+              ),
+            }
+          : {}),
       };
       config.externals = (config.externals || []).filter((external) => {
         return !(
@@ -156,7 +162,7 @@ const createNextConfig = (phase) => {
   // next-pwa runs an additional webpack pass that is not needed for the
   // Cloudflare/OpenNext worker bundle and can make Cloudflare builds fail with
   // a generic "Build failed because of webpack errors" message.
-  if (isDevelopment || isCloudflare) {
+  if (isDevelopment || isEdgeBuild) {
     return nextConfig;
   }
 

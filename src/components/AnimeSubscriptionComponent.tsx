@@ -179,7 +179,7 @@ export default function AnimeSubscriptionComponent({
   const [formData, setFormData] = useState({
     title: '',
     filterText: '',
-    source: 'mikan' as 'acgrip' | 'mikan' | 'dmhy',
+    source: 'mikan' as 'acgrip' | 'mikan' | 'dmhy' | 'nyaa',
     lastEpisode: 0,
     enabled: true,
   });
@@ -551,6 +551,7 @@ export default function AnimeSubscriptionComponent({
                   <option value='mikan'>蜜柑 (Mikan)</option>
                   <option value='acgrip'>ACG.RIP</option>
                   <option value='dmhy'>动漫花园 (DMHY)</option>
+                  <option value='nyaa'>Nyaa</option>
                 </select>
               </div>
               <div>
@@ -619,7 +620,7 @@ export default function AnimeSubscriptionComponent({
                       {sub.title}
                     </h3>
                     <span className='px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'>
-                      {sub.source === 'acgrip' ? 'ACG.RIP' : sub.source === 'mikan' ? '蜜柑' : '动漫花园'}
+                      {sub.source === 'acgrip' ? 'ACG.RIP' : sub.source === 'mikan' ? '蜜柑' : sub.source === 'nyaa' ? 'Nyaa' : '动漫花园'}
                     </span>
                   </div>
                   <div className='text-sm text-gray-600 dark:text-gray-400 space-y-1'>
@@ -675,7 +676,7 @@ export default function AnimeSubscriptionComponent({
                       {sub.title}
                     </h3>
                     <span className='inline-block mt-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200'>
-                      {sub.source === 'acgrip' ? 'ACG.RIP' : sub.source === 'mikan' ? '蜜柑' : '动漫花园'}
+                      {sub.source === 'acgrip' ? 'ACG.RIP' : sub.source === 'mikan' ? '蜜柑' : sub.source === 'nyaa' ? 'Nyaa' : '动漫花园'}
                     </span>
                   </div>
                   <Switch

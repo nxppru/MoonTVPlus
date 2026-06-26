@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
       MagnetMikanReverseProxy,
       MagnetDmhyReverseProxy,
       MagnetAcgripReverseProxy,
+      MagnetNyaaReverseProxy,
       EnableComments,
       CustomAdFilterCode,
       CustomAdFilterVersion,
@@ -113,6 +114,7 @@ export async function POST(request: NextRequest) {
       MagnetMikanReverseProxy?: string;
       MagnetDmhyReverseProxy?: string;
       MagnetAcgripReverseProxy?: string;
+      MagnetNyaaReverseProxy?: string;
       EnableComments: boolean;
       CustomAdFilterCode?: string;
       CustomAdFilterVersion?: number;
@@ -181,6 +183,8 @@ export async function POST(request: NextRequest) {
         typeof MagnetDmhyReverseProxy !== 'string') ||
       (MagnetAcgripReverseProxy !== undefined &&
         typeof MagnetAcgripReverseProxy !== 'string') ||
+      (MagnetNyaaReverseProxy !== undefined &&
+        typeof MagnetNyaaReverseProxy !== 'string') ||
       typeof EnableComments !== 'boolean' ||
       (CustomAdFilterCode !== undefined &&
         typeof CustomAdFilterCode !== 'string') ||
@@ -263,6 +267,7 @@ export async function POST(request: NextRequest) {
       MagnetMikanReverseProxy,
       MagnetDmhyReverseProxy,
       MagnetAcgripReverseProxy,
+      MagnetNyaaReverseProxy,
       EnableComments,
       CustomAdFilterCode,
       CustomAdFilterVersion,

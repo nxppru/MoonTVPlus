@@ -11,6 +11,28 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "223.2.0",
+    date: "2026-06-25",
+    added: [
+    "EdgeOne部署支持",
+    "Web TV增加局域网遥控",
+    "动漫磁力搜索增加Nyaa源",
+    "下载增加IndexedDB模式",
+    "增加下载内容导出功能",
+    "增加自定义X-Emby-Authorization"
+    ],
+    changed: [
+    "UC和夸克网盘增加自动续期机制",
+    "优化预加载策略",
+    "扫码登录成功返回上一页",
+    "用户登出立即失效所有token"
+    ],
+    fixed: [
+    "修复AI总开关关闭后AI评论仍然显示",
+    "修复搜索页带类型参数时仍后台搜索影视类型"
+    ]
+  },
+  {
     version: "223.1.0",
     date: "2026-06-15",
     added: [

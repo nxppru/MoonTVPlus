@@ -385,6 +385,7 @@ interface SiteConfig {
   MagnetMikanReverseProxy?: string;
   MagnetDmhyReverseProxy?: string;
   MagnetAcgripReverseProxy?: string;
+  MagnetNyaaReverseProxy?: string;
   EnableComments: boolean;
   EnableRegistration?: boolean;
   RequireRegistrationInviteCode?: boolean;
@@ -5277,6 +5278,7 @@ const EmbyConfigComponent = ({
     transcodeMp4: false,
     proxyPlay: false,
     customUserAgent: '',
+    embyAuthorizationHeader: '',
   });
   const [authMode, setAuthMode] = useState<'apikey' | 'password'>('apikey');
 
@@ -5296,6 +5298,7 @@ const EmbyConfigComponent = ({
           Username: config.EmbyConfig.Username,
           Password: config.EmbyConfig.Password,
           UserId: config.EmbyConfig.UserId,
+          embyAuthorizationHeader: config.EmbyConfig.embyAuthorizationHeader,
           isDefault: true,
         },
       ]);
@@ -5320,6 +5323,7 @@ const EmbyConfigComponent = ({
       transcodeMp4: false,
       proxyPlay: false,
       customUserAgent: '',
+      embyAuthorizationHeader: '',
     });
     setAuthMode('apikey');
     setEditingSource(null);
@@ -5498,6 +5502,7 @@ const EmbyConfigComponent = ({
             ApiKey: source.ApiKey,
             Username: source.Username,
             Password: source.Password,
+            embyAuthorizationHeader: source.embyAuthorizationHeader,
           }),
         });
 
@@ -6222,6 +6227,28 @@ const EmbyConfigComponent = ({
                 />
                 <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
                   用于登录、获取影片和代理视频时的User-Agent，留空则使用默认浏览器UA
+                </p>
+              </div>
+
+              {/* 自定义 X-Emby-Authorization */}
+              <div className='mb-3'>
+                <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+                  自定义 X-Emby-Authorization
+                </label>
+                <input
+                  type='text'
+                  value={formData.embyAuthorizationHeader || ''}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      embyAuthorizationHeader: e.target.value,
+                    })
+                  }
+                  placeholder='留空使用默认 moontvplus 认证头'
+                  className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white text-sm'
+                />
+                <p className='text-xs text-gray-500 dark:text-gray-400 mt-1'>
+                  仅用于账号认证登录请求，示例：MediaBrowser Client=&quot;moontvplus&quot;, Device=&quot;Web&quot;, DeviceId=&quot;moontvplus-web&quot;, Version=&quot;1.0.0&quot;
                 </p>
               </div>
             </div>
@@ -10151,6 +10178,7 @@ const SiteConfigComponent = ({
     MagnetMikanReverseProxy: '',
     MagnetDmhyReverseProxy: '',
     MagnetAcgripReverseProxy: '',
+    MagnetNyaaReverseProxy: '',
     EnableComments: false,
     EnableRegistration: false,
     RegistrationRequireTurnstile: false,
@@ -10273,6 +10301,7 @@ const SiteConfigComponent = ({
         MagnetDmhyReverseProxy: config.SiteConfig.MagnetDmhyReverseProxy || '',
         MagnetAcgripReverseProxy:
           config.SiteConfig.MagnetAcgripReverseProxy || '',
+        MagnetNyaaReverseProxy: config.SiteConfig.MagnetNyaaReverseProxy || '',
         EnableComments: config.SiteConfig.EnableComments || false,
       });
     }
@@ -11276,6 +11305,27 @@ const SiteConfigComponent = ({
             />
             <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
               配置后将使用该地址替代默认的 ACG.RIP 域名进行请求。
+            </p>
+          </div>
+
+          <div>
+            <label className='block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2'>
+              Nyaa 反代代理
+            </label>
+            <input
+              type='text'
+              placeholder='请输入 Nyaa 反代 Base URL（可选）'
+              value={siteSettings.MagnetNyaaReverseProxy || ''}
+              onChange={(e) =>
+                setSiteSettings((prev) => ({
+                  ...prev,
+                  MagnetNyaaReverseProxy: e.target.value,
+                }))
+              }
+              className='w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-green-500 focus:border-transparent'
+            />
+            <p className='mt-1 text-xs text-gray-500 dark:text-gray-400'>
+              配置后将使用该地址替代默认的 Nyaa 域名进行请求。
             </p>
           </div>
         </div>

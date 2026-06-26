@@ -84,11 +84,11 @@
 | 语言      | TypeScript 4                                                 |
 | 播放器    | [ArtPlayer](https://github.com/zhw2590582/ArtPlayer) · [HLS.js](https://github.com/video-dev/hls.js/) |
 | 代码质量  | ESLint · Prettier · Jest                                     |
-| 部署      | Docker                                                       |
+| 部署      | Docker · Vercel · Netlify · Cloudflare Workers · EdgeOne Pages |
 
 ## 部署
 
-本项目**支持 Docker、Vercel、Netlify 和 Cloudflare Workers 平台** 部署。
+本项目**支持 Docker、Vercel、Netlify、Cloudflare Workers 和 EdgeOne Pages 平台** 部署。
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/mtvpls/MoonTVPlus)
 
@@ -193,6 +193,52 @@ on:
 **7. 配置外部定时任务（可选）**
 
 可使用外部定时请求/api/cron/mtvpls端点以触发定时任务，或新建一个workers请求触发，推荐每小时请求一次。
+
+---
+
+### EdgeOne Pages 部署（通过 GitHub Actions）
+
+EdgeOne Pages/Makers 支持通过 API Token 在 GitHub Actions 中自动构建并部署，本项目已内置 `.github/workflows/edgeone-deploy.yml`。
+
+#### 前置要求
+
+1. 一个腾讯云 EdgeOne 账号
+2. Fork 本项目到你的 GitHub 账号
+3. 准备一个 Upstash Redis 实例（推荐）
+4. 准备 EdgeOne API Token
+
+#### 配置步骤
+
+**1. 获取 EdgeOne API Token**
+
+- 进入 EdgeOne Pages/Makers 控制台
+- 在账号或 API Token 相关页面创建用于 CI/CD 的 Token
+- 复制生成的 Token，后续填入 GitHub Secrets
+
+**2. 配置 GitHub Secrets**
+
+进入你 Fork 的仓库，点击 Settings > Secrets and variables > Actions > New repository secret，添加以下必需的 Secrets：
+
+| Secret 名称                | 说明                | 示例值                   |
+| -------------------------- | ------------------- | ------------------------ |
+| `EDGEONE_API_TOKEN`        | EdgeOne API Token   | `your_edgeone_token`     |
+| `USERNAME`                 | 站长账号            | `admin`                  |
+| `PASSWORD`                 | 站长密码            | `your_secure_password`   |
+| `NEXT_PUBLIC_STORAGE_TYPE` | 存储类型            | `upstash`                |
+| `UPSTASH_URL`              | Upstash Redis URL   | `https://xxx.upstash.io` |
+| `UPSTASH_TOKEN`            | Upstash Redis Token | `your_upstash_token`     |
+
+其他可选环境变量可按需继续添加到 GitHub Secrets，工作流会自动同步已配置且非空的变量到 EdgeOne 项目环境变量中。
+
+**3. 触发部署**
+
+- 进入仓库的 Actions 页面
+- 选择 "Deploy to EdgeOne" workflow
+- 点击 "Run workflow"
+- `project_name` 默认为 `moontvplus`
+- `area` 默认为 `overseas`，即全球可用区（不含中国大陆）；如需全球可用区可选择 `global`
+- `sync_environment` 默认开启，会在部署后同步环境变量并再次部署以确保新建项目也能读取环境变量
+
 
 ---
 

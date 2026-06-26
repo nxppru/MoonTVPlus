@@ -21,7 +21,6 @@ const MobileHeader = ({ showBackButton = false }: MobileHeaderProps) => {
         <div className='flex items-center gap-2'>
           <Link
             href='/search'
-            prefetch={false}
             className='w-10 h-10 p-2 rounded-full flex items-center justify-center text-gray-600 hover:bg-gray-200/50 dark:text-gray-300 dark:hover:bg-gray-700/50 transition-colors'
           >
             <svg

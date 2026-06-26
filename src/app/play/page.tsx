@@ -61,6 +61,7 @@ import {
   recommendationCacheKeys,
   setRecommendationCache,
 } from '@/lib/recommendations/cache';
+import { getIndexedDBVideoPlaybackUrl } from '@/lib/indexeddb-video-cache';
 import {
   convertSubtitleFileToVttObjectUrl,
   CUSTOM_SUBTITLE_ACCEPT,
@@ -2709,6 +2710,19 @@ function PlayPageClient() {
     return Math.round(score * 100) / 100; // 保留两位小数
   };
 
+  const cleanupLocalPlaybackBlobUrls = () => {
+    if (typeof window === 'undefined') return;
+    const urls = (window as any).__localFileBlobUrls;
+    if (Array.isArray(urls)) {
+      urls.forEach((url) => {
+        if (typeof url === 'string' && url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    }
+    (window as any).__localFileBlobUrls = [];
+  };
+
   // 检查是否有本地下载的视频
   const checkLocalDownload = async (
     source: string,
@@ -3198,6 +3212,7 @@ function PlayPageClient() {
     if (fileSystemCheck.hasLocal && fileSystemCheck.dirHandle) {
       // 使用本地文件播放
       try {
+        cleanupLocalPlaybackBlobUrls();
         // 读取 m3u8 文件
         const fileHandle = await fileSystemCheck.dirHandle.getFileHandle('playlist.m3u8', { create: false });
         const file = await fileHandle.getFile();
@@ -3261,8 +3276,36 @@ function PlayPageClient() {
       }
     }
 
-    // 如果没有 File System API 本地文件，检查服务器端本地下载
-    if (!fileSystemCheck.hasLocal) {
+    let indexedDBCheck: Awaited<ReturnType<typeof getIndexedDBVideoPlaybackUrl>> = { hasLocal: false };
+
+    // 如果没有 File System API 本地文件，检查 IndexedDB 应用内离线缓存
+    if (!fileSystemCheck.hasLocal && currentSource && currentId) {
+      indexedDBCheck = await getIndexedDBVideoPlaybackUrl(
+        currentSource,
+        currentId,
+        episodeIndex,
+        { preferServiceWorker: true }
+      );
+      if (requestSeq !== videoUrlRequestSeqRef.current) {
+        indexedDBCheck.objectUrls?.forEach((url) => URL.revokeObjectURL(url));
+        return;
+      }
+
+      if (indexedDBCheck.hasLocal && indexedDBCheck.url) {
+        cleanupLocalPlaybackBlobUrls();
+        if (indexedDBCheck.objectUrls?.length) {
+          (window as any).__localFileBlobUrls = indexedDBCheck.objectUrls;
+        }
+        newUrl = indexedDBCheck.url;
+        console.log(
+          `使用 IndexedDB 本地缓存播放（${indexedDBCheck.mode === 'service-worker' ? 'Service Worker' : 'Blob 降级'} 模式）:`,
+          episodeTitle
+        );
+      }
+    }
+
+    // 如果没有 File System API / IndexedDB 本地文件，检查服务器端本地下载
+    if (!fileSystemCheck.hasLocal && !indexedDBCheck.hasLocal) {
       const hasLocalFile = await checkLocalDownload(currentSource, currentId, episodeIndex);
       if (requestSeq !== videoUrlRequestSeqRef.current) {
         return;
@@ -8926,9 +8969,9 @@ function PlayPageClient() {
               setVideoError('视频无法在浏览器中播放（已尝试代理，格式不兼容）');
             } else if (currentSourceRef.current === 'directplay' && !currentUrl.includes('/api/proxy-m3u8')) {
               setCorsFailedUrl(currentUrl);
-              setVideoError('视频播放失败（格式不支持或跨域限制）');
+              setVideoError('视频播放失败');
             } else {
-              setVideoError('视频播放失败（格式不支持或跨域限制）');
+              setVideoError('视频播放失败');
             }
           }
         });
