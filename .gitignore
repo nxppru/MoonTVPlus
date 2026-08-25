@@ -70,6 +70,8 @@ public/workbox-*.js.map
 
 # local scripts
 scripts/tvbox/
+
+.github/workflows/sync.yml
 scripts/test
 
 .agents/
