@@ -75,3 +75,6 @@ scripts/test
 
 .agents/
 skills-lock.json
+
+# sync
+.github/workflows/sync.yml
