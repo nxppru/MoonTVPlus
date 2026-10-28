@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { getAuthInfoFromCookie } from '@/lib/auth';
 import { API_CONFIG, getAvailableApiSites, getConfig } from '@/lib/config';
+import { parseJsonLosslessIntegers } from '@/lib/json';
 import { yellowWords } from '@/lib/yellow';
 
 export const runtime = 'nodejs';
@@ -25,7 +26,7 @@ export async function GET(request: NextRequest) {
 
   const { searchParams } = new URL(request.url);
   const sourceKey = searchParams.get('source');
-  const includeSpecialSources = searchParams.get('special') === '1';
+  const specialOnly = searchParams.get('special') === '1';
 
   if (!sourceKey) {
     return NextResponse.json(
@@ -36,7 +37,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const config = await getConfig();
-    const apiSites = await getAvailableApiSites(authInfo.username, includeSpecialSources);
+    const apiSites = await getAvailableApiSites(authInfo.username, specialOnly);
     const targetSite = apiSites.find((site) => site.key === sourceKey);
 
     if (!targetSite) {
@@ -57,7 +58,9 @@ export async function GET(request: NextRequest) {
       throw new Error('获取分类列表失败');
     }
 
-    const classData: CmsClassResponse = await classResponse.json();
+    const classData = parseJsonLosslessIntegers<CmsClassResponse>(
+      await classResponse.text()
+    );
 
     if (!classData.class || !Array.isArray(classData.class)) {
       return NextResponse.json({

@@ -11,6 +11,59 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    version: "227.0.0",
+    date: "2026-10-27",
+    added: [
+    " cloudflare方式部署支持内部定时任务与观影室",
+    "增加竖屏短剧模式",
+    "github部署cloudflare增加VARS变量",
+    "电视直播增加自动测速，增加测速后选择推荐路线",
+    "新增拉取配置代理",
+    "openlist支持多源",
+    "视频源支持编辑"
+    ],
+    changed: [
+    "优化新版webview与ios pwa的布局",
+    "移除/sp页面写繁杂的说明",
+    "移除硬编码的sql迁移",
+    "增强直播源在cloudflare防护下的拉取能力"
+    ],
+    fixed: [
+    "修复换源列表某些情况下源重复",
+    "加固超长数字id丢失精度问题"
+    ]
+  },
+  {
+    version: "226.1.0",
+    date: "2026-10-05",
+    added: [
+    "新增快进快退时长配置",
+    "视频源可一键禁用无效源和无法搜索源"
+    ],
+    changed: [
+    "ai评论新版协议支持",
+    "网盘搜索时已配置的网盘分类靠前",
+    "特殊源双向隔离"
+    ],
+    fixed: [
+    "<span style='color:#e11d48'>【高危】</span>修复oidc伪造漏洞",
+    "修复方格进度条搜索样式错误切换成详情样式"
+    ]
+  },
+  {
+    version: "226.0.1",
+    date: "2026-09-28",
+    added: [
+      // 无新增内容
+    ],
+    changed: [
+    "源测速区分超时与无法访问"
+    ],
+    fixed: [
+    "修复非关系型数据库站长无法云备份"
+    ]
+  },
+  {
     version: "226.0.0",
     date: "2026-09-25",
     added: [

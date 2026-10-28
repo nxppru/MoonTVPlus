@@ -67,7 +67,7 @@ import {
 } from '@/lib/db.client';
 import { getDoubanDetail } from '@/lib/douban.client';
 import { isEpisodeHiddenByFilter, normalizeEpisodeFilterConfig } from '@/lib/episode-filter';
-import { appendSpecialSourceParam, isSpecialSourcesEnabledOnDevice } from '@/lib/special-source.client';
+import { appendSpecialSourceParam, isSpecialSourceContext } from '@/lib/special-source.client';
 import {
   buildEpisodeProgressContentKey,
   loadLocalEpisodeProgress,
@@ -75,6 +75,15 @@ import {
   saveLocalEpisodeProgress,
 } from '@/lib/episode-progress';
 import { isNetdiskSource, normalizeNetdiskSource } from '@/lib/netdisk/source';
+import {
+  calculateSeekTime,
+  DEFAULT_QUICK_FORWARD_SECONDS,
+  DEFAULT_SEEK_STEP_SECONDS,
+  loadStoredSeconds,
+  normalizeStoredSeconds,
+  QUICK_FORWARD_STORAGE_KEY,
+  SEEK_STEP_STORAGE_KEY,
+} from '@/lib/player-seek-settings';
 import {
   getRecommendationCache,
   recommendationCacheKeys,
@@ -88,6 +97,14 @@ import {
 import { getTMDBImageUrl } from '@/lib/tmdb.search';
 import { DanmakuFilterConfig, EpisodeFilterConfig, SearchResult } from '@/lib/types';
 import { base58Decode, getVideoResolutionFromM3u8, processImageUrl } from '@/lib/utils';
+import {
+  isDuanjuTypeName,
+  isDuanjuVerticalDisabled,
+} from '@/lib/duanju.client';
+import {
+  createAdFilteringHlsLoader,
+  loadCustomAdFilterCode,
+} from '@/lib/hls-ad-filter.client';
 import { useEnableAIComments } from '@/hooks/useEnableAIComments';
 import { useEnableComments } from '@/hooks/useEnableComments';
 import { useWatchRoomContextSafe } from '@/components/WatchRoomProvider';
@@ -213,7 +230,7 @@ const PLAY_SHORTCUT_GROUPS = [
     title: '播放控制',
     items: [
       { keys: ['空格'], description: '播放 / 暂停' },
-      { keys: ['←', '→'], description: '快退 / 快进 10 秒' },
+      { keys: ['←', '→'], description: '快退 / 快进（快进/倒退时间）' },
       { keys: ['P'], description: '快捷快进' },
       { keys: ['↑', '↓'], description: '音量增加 / 减少' },
       { keys: ['F'], description: '切换全屏' },
@@ -305,6 +322,14 @@ function PlayPageClient() {
         ? '🎬 正在获取视频详情...'
         : '🔍 正在搜索播放源...'
   );
+  // 加载步骤模型的入口参数只在首帧定格：initAll 拿到详情后会把 source/id 写回 URL、
+  // 删掉 prefer（见 ~5814），若让步骤跟着 searchParams 现算，方格会在「就绪」那一刻
+  // 从 搜索/优选/就绪(3 格) 塌成 详情/就绪(2 格)。冻结进入时的参数避免这次切换。
+  const [initialLoadParams] = useState(() => ({
+    source: searchParams.get('source'),
+    id: searchParams.get('id'),
+    prefer: searchParams.get('prefer'),
+  }));
   const [error, setError] = useState<string | null>(null);
   const [detail, setDetail] = useState<SearchResult | null>(null);
 
@@ -484,17 +509,26 @@ function PlayPageClient() {
     skipConfig.outro_time,
   ]);
 
-  // 快捷快进设置（默认 1 分 30 秒）
-  const DEFAULT_QUICK_FORWARD_SECONDS = 90;
-  const [quickForwardSeconds, setQuickForwardSeconds] = useState(() => {
-    if (typeof window === 'undefined') return DEFAULT_QUICK_FORWARD_SECONDS;
-    const saved = Number(localStorage.getItem('quickForwardSeconds'));
-    return Number.isFinite(saved) && saved > 0 ? saved : DEFAULT_QUICK_FORWARD_SECONDS;
-  });
+  // 快捷快进（P 键和控制栏按钮，默认 90 秒）
+  const [quickForwardSeconds, setQuickForwardSeconds] = useState(() =>
+    loadStoredSeconds(
+      QUICK_FORWARD_STORAGE_KEY,
+      DEFAULT_QUICK_FORWARD_SECONDS
+    )
+  );
   const quickForwardSecondsRef = useRef(quickForwardSeconds);
   useEffect(() => {
     quickForwardSecondsRef.current = quickForwardSeconds;
   }, [quickForwardSeconds]);
+
+  // 左右方向键快进/倒退（默认 10 秒）
+  const [seekStepSeconds, setSeekStepSeconds] = useState(() =>
+    loadStoredSeconds(SEEK_STEP_STORAGE_KEY, DEFAULT_SEEK_STEP_SECONDS)
+  );
+  const seekStepSecondsRef = useRef(seekStepSeconds);
+  useEffect(() => {
+    seekStepSecondsRef.current = seekStepSeconds;
+  }, [seekStepSeconds]);
 
   // 跳过检查的时间间隔控制
   const lastSkipCheckRef = useRef(0);
@@ -511,6 +545,13 @@ function PlayPageClient() {
   useEffect(() => {
     blockAdEnabledRef.current = blockAdEnabled;
   }, [blockAdEnabled]);
+
+  // 本地设置「禁用短剧竖屏模式」：影响是否渲染「短剧模式」入口，
+  // 所以挂载后再读 localStorage，别让 SSR/CSR 首屏不一致
+  const [duanjuVerticalDisabled, setDuanjuVerticalDisabled] = useState(false);
+  useEffect(() => {
+    setDuanjuVerticalDisabled(isDuanjuVerticalDisabled());
+  }, []);
 
   // 工具栏去广告开关：用于外部播放器及鸿蒙原生 HLS，默认 false
   const [externalPlayerAdBlock, setExternalPlayerAdBlock] = useState<boolean>(() => {
@@ -529,65 +570,15 @@ function PlayPageClient() {
   // 自定义去广告代码（从服务器获取并缓存）
   const customAdFilterCodeRef = useRef<string>('');
 
-  // 初始化时获取自定义去广告代码
+  // 初始化时获取自定义去广告代码（缓存/版本校验都在 lib/hls-ad-filter.client 里）
   useEffect(() => {
-    const fetchAdFilterCode = async () => {
-      if (typeof window === 'undefined') return;
-
-      try {
-        // 先从 localStorage 获取缓存的代码，立即可用
-        const cachedCode = localStorage.getItem('custom_ad_filter_code_cache');
-        const cachedVersion = localStorage.getItem('custom_ad_filter_version_cache');
-
-        if (cachedCode) {
-          customAdFilterCodeRef.current = cachedCode;
-          console.log('使用缓存的去广告代码');
-        }
-
-        // 从 window.RUNTIME_CONFIG 获取版本号
-        const version = (window as any).RUNTIME_CONFIG?.CUSTOM_AD_FILTER_VERSION || 0;
-
-        // 如果版本号为 0，说明去广告未设置，清空缓存并跳过
-        if (version === 0) {
-          console.log('去广告代码未设置（版本 0），清空缓存');
-          localStorage.removeItem('custom_ad_filter_code_cache');
-          localStorage.removeItem('custom_ad_filter_version_cache');
-          customAdFilterCodeRef.current = '';
-          return;
-        }
-
-        // 如果版本号不一致或没有缓存，才获取完整代码
-        if (!cachedVersion || parseInt(cachedVersion) !== version) {
-          console.log('检测到去广告代码更新（版本 ' + version + '），获取最新代码');
-
-          // 获取完整代码
-          const fullResponse = await fetch('/api/ad-filter?full=true');
-          if (!fullResponse.ok) {
-            console.warn('获取完整去广告代码失败，使用缓存');
-            return;
-          }
-
-          const { code } = await fullResponse.json();
-
-          if (code) {
-            localStorage.setItem('custom_ad_filter_code_cache', code);
-            localStorage.setItem('custom_ad_filter_version_cache', version.toString());
-            customAdFilterCodeRef.current = code;
-          } else if (!cachedCode) {
-            // 如果服务器没有代码且本地也没有缓存，清空缓存
-            localStorage.removeItem('custom_ad_filter_code_cache');
-            localStorage.removeItem('custom_ad_filter_version_cache');
-          }
-        } else {
-          console.log('去广告代码已是最新版本（版本 ' + version + '）');
-        }
-      } catch (error) {
-        console.error('获取去广告代码配置失败:', error);
-        // 失败时已经使用了缓存，无需额外处理
-      }
+    let cancelled = false;
+    loadCustomAdFilterCode().then((code) => {
+      if (!cancelled) customAdFilterCodeRef.current = code;
+    });
+    return () => {
+      cancelled = true;
     };
-
-    fetchAdFilterCode();
   }, []);
 
   // Anime4K超分相关状态
@@ -2521,6 +2512,31 @@ function PlayPageClient() {
   const artRef = useRef<HTMLDivElement | null>(null);
   // 换集重建播放器前记住网页全屏状态，新播放器 ready 后恢复
   const restoreWebFullscreenOnReadyRef = useRef(false);
+
+  // iOS PWA 自绘全屏：见 globals.css 的 .ios-pwa-immersive。
+  // 容器（artRef 的父级）是 JSX 里的固定节点，跨换集重建不换，所以类名能留着不丢全屏。
+  const isImmersiveFullscreen = () =>
+    !!artRef.current?.parentElement?.classList.contains('ios-pwa-immersive');
+  const enterImmersiveFullscreen = () => {
+    const wrap = artRef.current?.parentElement;
+    if (!wrap) return;
+    wrap.classList.add('ios-pwa-immersive');
+    document.body.style.overflow = 'hidden';
+    // 尺寸变了，催播放器重算（弹幕画布、Anime4K 画布都依赖 resize）
+    window.dispatchEvent(new Event('resize'));
+  };
+  const exitImmersiveFullscreen = () => {
+    artRef.current?.parentElement?.classList.remove('ios-pwa-immersive');
+    document.body.style.removeProperty('overflow');
+    window.dispatchEvent(new Event('resize'));
+  };
+  // 卸载兜底：用户在全屏里直接返回时，把 body 滚动锁和类名清掉
+  useEffect(() => {
+    return () => {
+      artRef.current?.parentElement?.classList.remove('ios-pwa-immersive');
+      document.body.style.removeProperty('overflow');
+    };
+  }, []);
   const activeHarmonyHlsPlaybackModeRef =
     useRef<HarmonyHlsPlaybackMode | null>(null);
   const activeNetdiskHlsPlaybackModeRef =
@@ -5070,83 +5086,6 @@ function PlayPageClient() {
     }
   };
 
-  function filterAdsFromM3U8(type: string, m3u8Content: string): string {
-    // 尝试使用缓存的自定义去广告代码
-    if (customAdFilterCodeRef.current && customAdFilterCodeRef.current.trim()) {
-      try {
-        // 移除 TypeScript 类型注解，转换为纯 JavaScript
-        const jsCode = customAdFilterCodeRef.current
-          // 移除函数参数的类型注解：name: type
-          .replace(/(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*([,)])/g, '$1$3')
-          // 移除函数返回值类型注解：): type {
-          .replace(/\)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*\{/g, ') {')
-          // 移除变量声明的类型注解：const name: type =
-          .replace(/(const|let|var)\s+(\w+)\s*:\s*(string|number|boolean|any|void|never|unknown|object)\s*=/g, '$1 $2 =');
-
-        // 创建并执行自定义函数
-        const customFunction = new Function('type', 'm3u8Content',
-          jsCode + '\nreturn filterAdsFromM3U8(type, m3u8Content);'
-        );
-        return customFunction(type, m3u8Content);
-      } catch (err) {
-        console.error('执行自定义去广告代码失败，使用默认规则:', err);
-        // 如果自定义代码执行失败，继续使用默认规则
-      }
-    }
-
-    // 默认去广告规则
-    if (!m3u8Content) return '';
-
-    // 广告关键字列表
-    const adKeywords = [
-      'sponsor',
-      '/ad/',
-      '/ads/',
-      'advert',
-      'advertisement',
-      '/adjump',
-      'redtraffic'
-    ];
-
-    // 按行分割M3U8内容
-    const lines = m3u8Content.split('\n');
-    const filteredLines = [];
-
-    let i = 0;
-    while (i < lines.length) {
-      const line = lines[i];
-
-      // 跳过 #EXT-X-DISCONTINUITY 标识
-      if (line.includes('#EXT-X-DISCONTINUITY')) {
-        i++;
-        continue;
-      }
-
-      // 如果是 EXTINF 行，检查下一行 URL 是否包含广告关键字
-      if (line.includes('#EXTINF:')) {
-        // 检查下一行 URL 是否包含广告关键字
-        if (i + 1 < lines.length) {
-          const nextLine = lines[i + 1];
-          const containsAdKeyword = adKeywords.some(keyword =>
-            nextLine.toLowerCase().includes(keyword.toLowerCase())
-          );
-
-          if (containsAdKeyword) {
-            // 跳过 EXTINF 行和 URL 行
-            i += 2;
-            continue;
-          }
-        }
-      }
-
-      // 保留当前行
-      filteredLines.push(line);
-      i++;
-    }
-
-    return filteredLines.join('\n');
-  }
-
   // 跳过片头片尾配置相关函数
   const handleSkipConfigChange = async (newConfig: {
     enable: boolean;
@@ -5220,42 +5159,6 @@ function PlayPageClient() {
         .toString()
         .padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
     }
-  };
-
-  // 创建自定义 HLS loader 的工厂函数
-  const createCustomHlsLoader = (HlsLib: any) => {
-    return class CustomHlsJsLoader extends HlsLib.DefaultConfig.loader {
-      constructor(config: any) {
-        super(config);
-        const load = this.load.bind(this);
-        this.load = function (context: any, config: any, callbacks: any) {
-          // 拦截manifest和level请求
-          if (
-            (context as any).type === 'manifest' ||
-            (context as any).type === 'level'
-          ) {
-            const onSuccess = callbacks.onSuccess;
-            callbacks.onSuccess = function (
-              response: any,
-              stats: any,
-              context: any
-            ) {
-              // 如果是m3u8文件，处理内容以移除广告分段
-              if (response.data && typeof response.data === 'string') {
-                // 过滤掉广告段 - 实现更精确的广告过滤逻辑
-                response.data = filterAdsFromM3U8(
-                  currentSourceRef.current,
-                  response.data
-                );
-              }
-              return onSuccess(response, stats, context, null);
-            };
-          }
-          // 执行原始load方法
-          load(context, config, callbacks);
-        };
-      }
-    };
   };
 
   // 当集数索引变化时自动更新视频地址
@@ -5440,7 +5343,7 @@ function PlayPageClient() {
       }
 
       try {
-        const cacheKey = `search_cache_${query.trim()}${isSpecialSourcesEnabledOnDevice() ? '_special' : ''}`;
+        const cacheKey = `search_cache_${query.trim()}${isSpecialSourceContext() ? '_special' : ''}`;
         const cached = sessionStorage.getItem(cacheKey);
         if (!cached) return null;
 
@@ -5461,7 +5364,7 @@ function PlayPageClient() {
       if (typeof window === 'undefined' || !query.trim()) return;
 
       try {
-        const cacheKey = `search_cache_${query.trim()}${isSpecialSourcesEnabledOnDevice() ? '_special' : ''}`;
+        const cacheKey = `search_cache_${query.trim()}${isSpecialSourceContext() ? '_special' : ''}`;
         const payload: SearchCachePayload = {
           status: 'complete',
           results,
@@ -5674,15 +5577,19 @@ function PlayPageClient() {
         // 异步获取其他源信息，不阻塞播放
         setBackgroundSourcesLoading(true);
         fetchSourcesData(searchTitle || videoTitle).then((sources) => {
-          // 合并当前源和搜索到的其他源
-          const allSources = [...sourcesInfo];
-          sources.forEach((source) => {
-            // 避免重复添加当前源
-            if (!(source.source === currentSource && source.id === currentId)) {
-              allSources.push(source);
+          // 合并当前源和搜索到的其他源。
+          // 注意：命中缓存时 sourcesInfo 已经是完整源列表，直接拼接会和搜索结果重复，
+          // 必须按 source+id 去重（当前源的详情保留在前，信息更全）。
+          const mergedSources = new Map<string, SearchResult>();
+          [...sourcesInfo, ...sources].forEach((source) => {
+            const key = `${source.source}-${source.id}`;
+            if (!mergedSources.has(key)) {
+              mergedSources.set(key, source);
             }
           });
-          setAvailableSources(applyCorrectionsToSources(allSources));
+          setAvailableSources(
+            applyCorrectionsToSources(Array.from(mergedSources.values()))
+          );
           setBackgroundSourcesLoading(false);
         }).catch((err) => {
           console.error('异步获取其他源失败:', err);
@@ -7039,21 +6946,34 @@ function PlayPageClient() {
       }
     }
 
-    // 左箭头 = 快退
+    // 左箭头 = 按「快进/倒退时间」快退
     if (!e.altKey && e.key === 'ArrowLeft') {
-      if (artPlayerRef.current && artPlayerRef.current.currentTime > 5) {
-        artPlayerRef.current.currentTime -= 10;
+      if (artPlayerRef.current) {
+        artPlayerRef.current.currentTime = calculateSeekTime(
+          artPlayerRef.current.currentTime,
+          artPlayerRef.current.duration,
+          -1,
+          seekStepSecondsRef.current
+        );
+        artPlayerRef.current.notice.show = `快退 ${formatQuickForwardDuration(
+          seekStepSecondsRef.current
+        )}`;
         e.preventDefault();
       }
     }
 
-    // 右箭头 = 快进
+    // 右箭头 = 按「快进/倒退时间」快进
     if (!e.altKey && e.key === 'ArrowRight') {
-      if (
-        artPlayerRef.current &&
-        artPlayerRef.current.currentTime < artPlayerRef.current.duration - 5
-      ) {
-        artPlayerRef.current.currentTime += 10;
+      if (artPlayerRef.current) {
+        artPlayerRef.current.currentTime = calculateSeekTime(
+          artPlayerRef.current.currentTime,
+          artPlayerRef.current.duration,
+          1,
+          seekStepSecondsRef.current
+        );
+        artPlayerRef.current.notice.show = `快进 ${formatQuickForwardDuration(
+          seekStepSecondsRef.current
+        )}`;
         e.preventDefault();
       }
     }
@@ -7172,6 +7092,12 @@ function PlayPageClient() {
           detailRef.current?.type_name,
           detailRef.current?.class
         ),
+        // 短剧内容在这里也打标，免得续看记录被普通页写掉后回不到竖屏页；
+        // 判断不出就不表态（undefined），别把竖屏页打的标记冲掉
+        is_duanju:
+          isDuanjuTypeName(
+            detailRef.current?.type_name || detailRef.current?.class || ''
+          ) || undefined,
       });
 
       lastSavedPlayTimeRef.current = playTime;
@@ -7650,8 +7576,12 @@ function PlayPageClient() {
           });
         };
 
-        // 创建自定义 HLS loader
-        const CustomHlsJsLoader = createCustomHlsLoader(Hls);
+        // 创建自定义 HLS loader（去广告逻辑见 lib/hls-ad-filter.client）
+        const CustomHlsJsLoader = createAdFilteringHlsLoader(
+          Hls,
+          () => currentSourceRef.current,
+          () => customAdFilterCodeRef.current
+        );
 
         // 创建新的播放器实例
         Artplayer.PLAYBACK_RATE = PLAYBACK_RATE_OPTIONS;
@@ -8251,8 +8181,8 @@ function PlayPageClient() {
                 const confirmButton = container.querySelector('[data-action="confirm"]');
                 const cleanup = () => container.remove();
                 const save = () => {
-                  const nextSeconds = Number(input.value);
-                  if (!Number.isFinite(nextSeconds) || nextSeconds <= 0) {
+                  const normalizedSeconds = normalizeStoredSeconds(Number(input.value));
+                  if (normalizedSeconds === null) {
                     input.focus();
                     if (artPlayerRef.current) {
                       artPlayerRef.current.notice.show = '请输入大于 0 的有效秒数';
@@ -8260,12 +8190,90 @@ function PlayPageClient() {
                     return;
                   }
 
-                  const normalizedSeconds = Math.max(1, Math.round(nextSeconds));
                   setQuickForwardSeconds(normalizedSeconds);
                   quickForwardSecondsRef.current = normalizedSeconds;
-                  localStorage.setItem('quickForwardSeconds', String(normalizedSeconds));
+                  localStorage.setItem(QUICK_FORWARD_STORAGE_KEY, String(normalizedSeconds));
                   if (artPlayerRef.current) {
                     artPlayerRef.current.notice.show = `快捷快进已设置为${formatQuickForwardDuration(normalizedSeconds)}`;
+                  }
+                  cleanup();
+                };
+
+                cancelButton?.addEventListener('click', cleanup);
+                confirmButton?.addEventListener('click', save);
+                container.addEventListener('click', (event) => {
+                  if (event.target === container) cleanup();
+                });
+                input.addEventListener('keydown', (event) => {
+                  if (event.key === 'Enter') save();
+                  if (event.key === 'Escape') cleanup();
+                });
+                input.focus();
+                input.select();
+                return '打开设置';
+              },
+            },
+            {
+              name: '快进/倒退时间',
+              html: '快进/倒退时间',
+              icon: '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="m4 12 6-6v12l-6-6Z" fill="#ffffff"/><path d="m20 12-6-6v12l6-6Z" fill="#ffffff"/></svg>',
+              tooltip: `${formatQuickForwardDuration(seekStepSecondsRef.current)}`,
+              onClick: async function () {
+                const player = artPlayerRef.current;
+                if (player?.fullscreen) {
+                  player.fullscreen = false;
+                  await new Promise(resolve => setTimeout(resolve, 300));
+                }
+
+                const existingDialog = document.querySelector('.seek-step-settings-dialog');
+                existingDialog?.remove();
+
+                const container = document.createElement('div');
+                container.className = 'seek-step-settings-dialog';
+                container.style.cssText = `
+                  position: fixed;
+                  inset: 0;
+                  z-index: 10000;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 16px;
+                  background: rgba(0, 0, 0, 0.6);
+                  backdrop-filter: blur(3px);
+                `;
+                container.innerHTML = `
+                  <div role="dialog" aria-modal="true" style="width: min(360px, 100%); background: #1f2937; color: #fff; border: 1px solid rgba(255,255,255,.12); border-radius: 12px; padding: 20px; box-shadow: 0 16px 48px rgba(0,0,0,.45);">
+                    <div style="font-size: 17px; font-weight: 600; margin-bottom: 8px;">快进/倒退时间</div>
+                    <div style="color: #9ca3af; font-size: 13px; line-height: 1.5; margin-bottom: 16px;">设置左右方向键快进 / 快退的时间。</div>
+                    <label for="seek-step-input" style="display: block; color: #d1d5db; font-size: 13px; margin-bottom: 6px;">时长（秒）</label>
+                    <input id="seek-step-input" type="number" min="1" step="1" value="${seekStepSecondsRef.current}" style="box-sizing: border-box; width: 100%; height: 40px; padding: 0 10px; border: 1px solid #4b5563; border-radius: 6px; background: #111827; color: #fff; font-size: 14px; outline: none;" />
+                    <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;">
+                      <button type="button" data-action="cancel" style="height: 36px; padding: 0 14px; border: 0; border-radius: 6px; background: #374151; color: #fff; cursor: pointer;">取消</button>
+                      <button type="button" data-action="confirm" style="height: 36px; padding: 0 14px; border: 0; border-radius: 6px; background: #0d9488; color: #fff; cursor: pointer;">保存</button>
+                    </div>
+                  </div>
+                `;
+                document.body.appendChild(container);
+
+                const input = container.querySelector('#seek-step-input') as HTMLInputElement;
+                const cancelButton = container.querySelector('[data-action="cancel"]');
+                const confirmButton = container.querySelector('[data-action="confirm"]');
+                const cleanup = () => container.remove();
+                const save = () => {
+                  const normalizedSeconds = normalizeStoredSeconds(Number(input.value));
+                  if (normalizedSeconds === null) {
+                    input.focus();
+                    if (artPlayerRef.current) {
+                      artPlayerRef.current.notice.show = '请输入大于 0 的有效秒数';
+                    }
+                    return;
+                  }
+
+                  setSeekStepSeconds(normalizedSeconds);
+                  seekStepSecondsRef.current = normalizedSeconds;
+                  localStorage.setItem(SEEK_STEP_STORAGE_KEY, String(normalizedSeconds));
+                  if (artPlayerRef.current) {
+                    artPlayerRef.current.notice.show = `快进/倒退时间已设为${formatQuickForwardDuration(normalizedSeconds)}`;
                   }
                   cleanup();
                 };
@@ -8727,18 +8735,14 @@ function PlayPageClient() {
                   return;
                 }
 
-                // 如果在 PWA 模式下，直接使用容器全屏（可以隐藏状态栏）
+                // PWA 下自绘全屏：iPhone 上 requestFullscreen 对普通元素无效；
+                // 原来这里调 $container.webkitEnterFullscreen() 是死代码（div 没这方法），
+                // 恒为假 → 永远退化成 fullscreenWeb → 竖屏不转、画面缩在中间。
                 if (isPWA) {
-                  const container = artPlayerRef.current.template.$container;
-                  if (container && container.webkitEnterFullscreen) {
-                    container.webkitEnterFullscreen().catch((err: Error) => {
-                      console.error('PWA 全屏失败:', err);
-                      // 如果失败，降级使用网页全屏
-                      artPlayerRef.current.fullscreenWeb = true;
-                    });
+                  if (isImmersiveFullscreen()) {
+                    exitImmersiveFullscreen();
                   } else {
-                    // 不支持原生全屏，使用网页全屏
-                    artPlayerRef.current.fullscreenWeb = true;
+                    enterImmersiveFullscreen();
                   }
                   return;
                 }
@@ -9699,17 +9703,33 @@ function PlayPageClient() {
             const backwardBtn = $el.querySelector('.seek-backward') as HTMLElement;
             const forwardBtn = $el.querySelector('.seek-forward') as HTMLElement;
 
-            // 快退5秒
+            // 按「快进/倒退时间」配置快退
             backwardBtn.onclick = () => {
               if (artPlayerRef.current) {
-                artPlayerRef.current.currentTime = Math.max(0, artPlayerRef.current.currentTime - 5);
+                artPlayerRef.current.currentTime = calculateSeekTime(
+                  artPlayerRef.current.currentTime,
+                  artPlayerRef.current.duration,
+                  -1,
+                  seekStepSecondsRef.current
+                );
+                artPlayerRef.current.notice.show = `快退 ${formatQuickForwardDuration(
+                  seekStepSecondsRef.current
+                )}`;
               }
             };
 
-            // 快进5秒
+            // 按「快进/倒退时间」配置快进
             forwardBtn.onclick = () => {
               if (artPlayerRef.current) {
-                artPlayerRef.current.currentTime = Math.min(artPlayerRef.current.duration, artPlayerRef.current.currentTime + 5);
+                artPlayerRef.current.currentTime = calculateSeekTime(
+                  artPlayerRef.current.currentTime,
+                  artPlayerRef.current.duration,
+                  1,
+                  seekStepSecondsRef.current
+                );
+                artPlayerRef.current.notice.show = `快进 ${formatQuickForwardDuration(
+                  seekStepSecondsRef.current
+                )}`;
               }
             };
 
@@ -10351,10 +10371,11 @@ function PlayPageClient() {
   }, []);
 
   // 初始化加载样式的步骤模型（说明见文件顶部 LOADING_STEP_META 上方注释）
+  // 入口参数用首帧定格的 initialLoadParams，不读 searchParams：详见其声明处注释。
   const loadEntry: LoadingStepKey =
-    searchParams.get('source') === 'directplay'
+    initialLoadParams.source === 'directplay'
       ? 'direct'
-      : searchParams.get('source') && searchParams.get('id')
+      : initialLoadParams.source && initialLoadParams.id
         ? 'detail'
         : 'search';
   // 优选是否真的会跑：只有开了优选开关，且是搜索入口或带 prefer 标记时才有这一格
@@ -10363,7 +10384,7 @@ function PlayPageClient() {
   const willPrefer =
     optimizationEnabled &&
     loadEntry !== 'direct' &&
-    (loadEntry === 'search' || searchParams.get('prefer') === 'true');
+    (loadEntry === 'search' || initialLoadParams.prefer === 'true');
   const loadSteps: LoadingStepKey[] =
     loadEntry === 'direct'
       ? ['direct', 'ready']
@@ -11236,6 +11257,49 @@ function PlayPageClient() {
                             </span>
                           </button>
                         )}
+
+                        {/* 短剧模式：分类名命中短剧时，切到竖屏沉浸播放页
+                            （本地设置禁用竖屏模式、或处于观影室内时不出这个入口） */}
+                        {currentSource &&
+                          currentId &&
+                          !duanjuVerticalDisabled &&
+                          !watchRoomContext?.currentRoom &&
+                          isDuanjuTypeName(detail?.type_name || detail?.class || '') && (
+                            <button
+                              onClick={(e) => {
+                                e.preventDefault();
+                                saveCurrentPlayProgress();
+                                const params = new URLSearchParams({
+                                  source: currentSource,
+                                  id: currentId,
+                                  title: videoTitle || detail?.title || '',
+                                });
+                                const y = videoYear || detail?.year;
+                                if (y) params.set('year', y);
+                                if (fileName) params.set('fileName', fileName);
+                                router.push(`/duanju/play?${params.toString()}`);
+                              }}
+                              className='group relative flex items-center justify-center gap-1 w-8 h-8 lg:w-auto lg:h-auto lg:px-2 lg:py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-xs font-medium rounded-md transition-all duration-200 shadow-sm hover:shadow-md cursor-pointer overflow-hidden border border-emerald-400 flex-shrink-0'
+                              title='切换到短剧竖屏模式'
+                              aria-label='切换到短剧竖屏模式'
+                            >
+                              <svg
+                                className='w-4 h-4 flex-shrink-0 text-white'
+                                viewBox='0 0 24 24'
+                                fill='none'
+                                stroke='currentColor'
+                                strokeWidth='2'
+                                strokeLinecap='round'
+                                strokeLinejoin='round'
+                              >
+                                <rect x='7' y='2' width='10' height='20' rx='2' />
+                                <path d='M12 18h.01' />
+                              </svg>
+                              <span className='hidden lg:inline max-w-0 group-hover:max-w-[100px] overflow-hidden whitespace-nowrap transition-all duration-200 ease-in-out text-white'>
+                                短剧模式
+                              </span>
+                            </button>
+                          )}
 
                         {/* 快捷键说明 */}
                         <button

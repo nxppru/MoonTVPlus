@@ -13,6 +13,7 @@ export const LOCAL_SETTINGS_SYNC_LAST_PULL_KEY = 'moontv_local_settings_sync_las
 export const LOCAL_SETTINGS_KEYS: string[] = [
   'defaultAggregateSearch',
   'saveLivePlayRecords',
+  'liveAutoSpeedTest',
   'enableOptimization',
   'preferStrategy',
   'preferMode',
@@ -42,6 +43,7 @@ export const LOCAL_SETTINGS_KEYS: string[] = [
   'nextEpisodePreCache',
   'nextEpisodeDanmakuPreload',
   'disablePlaybackThumbnail',
+  'disableDuanjuVertical',
   'disableEpisodeTitleFetch',
   'disableAutoLoadDanmaku',
   'danmakuMaxCount',
@@ -53,6 +55,9 @@ export const LOCAL_SETTINGS_KEYS: string[] = [
   'danmakuTraditionalToSimplified',
   'searchTraditionalToSimplified',
   'exactSearch',
+  // 播放器跳转时间：快捷快进与方向键步长分开存，两个键都要跟着云同步走
+  'quickForwardSeconds',
+  'seekStepSeconds',
 ];
 
 export const LOCAL_SETTINGS_MAX_PAYLOAD_BYTES = 64 * 1024; // 64KB
