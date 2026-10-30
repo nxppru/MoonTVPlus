@@ -24,7 +24,7 @@ jobs:
         id: sync
         uses: aormsby/fork-sync-with-upstream-action@v3.4.3
         with:
-          upstream_sync_repo: mtvpls/MoonTVPlus
+          upstream_sync_repo: https://github.com/mtvpls/MoonTVPlus.git
           upstream_sync_branch: main
           target_sync_branch: main
           target_repo_token: ${{ secrets.GITHUB_TOKEN }} # automatically generated, no need to set
